@@ -1,0 +1,6 @@
+{
+  "name": "GyneWell",
+  "description": "GyneWell Care & Wellness: Clinical publications, peer-reviewed maternal monographs, and medical publishing by Dr. Oluremi Ilupeju, MD, FACOG. Care You Trust, Wellness You Deserve.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
