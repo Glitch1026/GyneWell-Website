@@ -56,7 +56,7 @@
 │   │   ├── MonographCatalog.tsx # Compendium filterable grid (PDF-only, CME, badges)
 │   │   ├── ClinicalReader.tsx   # Interactive reader with chapters, notes & download link
 │   │   ├── AdminPanel.tsx       # 3-step PDF Upload/Parse/Publish modal & sales metrics
-│   │   ├── AuthModal.tsx        # Customer login/reg + discreet Administrator login
+│   │   ├── AuthModal.tsx        # Unified customer & admin login/reg (no visible admin buttons)
 │   │   ├── CartDrawer.tsx       # Instant digital slide-out cart with promo code engine
 │   │   ├── CheckoutModal.tsx    # Payment simulation (Card Luhn check / Google Pay)
 │   │   └── CustomerProfile.tsx  # Clinician library, synced notes, order history & downloads
@@ -74,8 +74,8 @@
 2. **Instant Checkout & Licensing**: Add PDF to bag, apply promo codes (e.g. `CLINICAL10`, `WELLNESS20`), validate payment, generate encrypted license keys (`GW-LIC-...`), and unlock instant DRM-free download links.
 3. **Interactive Clinical Reader**: Navigate chapters, track reading completion percentages, highlight quotes, save clinical notes, and download the full PDF when unlocked.
 4. **Role-Based Admin Protection (RBAC)**:
-   - For customers and guests: **No Admin Panel button** in header, mobile bar, or footer.
-   - For admins (`admin@gynewell.clinic`): **Admin Panel button appears**, unlocking the Medical Director Console.
+   - For customers and guests: **No Admin Panel button** in header, mobile bar, or footer, and **no Administrator button** in the login modal.
+   - For admins (`admin@gynewell.clinic`): Logging in through the standard sign-in form recognizes the admin account and reveals the **Admin Panel button**.
 5. **Admin PDF Upload & Automated Parsing Pipeline**:
    - Strictly enforces `.pdf` files (validates extension, MIME type, and `%PDF-` binary magic header). Non-PDF files are rejected with an inline alert.
    - Automatically parses title, subtitle, author, ISBN, category, synopsis, and structured chapters.

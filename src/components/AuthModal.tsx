@@ -13,7 +13,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   onLoginSuccess
 }) => {
-  const [mode, setMode] = useState<'login' | 'register' | 'admin'>('login');
+  const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [fullName, setFullName] = useState<string>('');
@@ -33,12 +33,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   if (!isOpen) return null;
 
-  const resetAndSwitchMode = (nextMode: 'login' | 'register' | 'admin') => {
+  const resetAndSwitchMode = (nextMode: 'login' | 'register') => {
     setErrorMessage('');
     setPassword('');
-    if (nextMode === 'admin') {
-      setEmail('');
-    }
     setMode(nextMode);
   };
 
@@ -62,12 +59,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const data = await res.json();
       if (!data.success) {
         setErrorMessage(data.error || 'Authentication failed');
-        setIsSubmitting(false);
-        return;
-      }
-
-      if (mode === 'admin' && data.user?.role !== 'admin') {
-        setErrorMessage('This email does not have GyneWell administrator privileges.');
         setIsSubmitting(false);
         return;
       }
@@ -134,11 +125,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             />
             <div>
               <h3 className="font-sans text-lg font-bold text-[#3b4349]">
-                {mode === 'admin'
-                  ? 'Administrator Sign In'
-                  : mode === 'login'
-                    ? 'GyneWell Sign In'
-                    : 'Register Customer Account'}
+                {mode === 'login' ? 'GyneWell Sign In' : 'Register Account'}
               </h3>
               <p className="text-[10px] text-[#717977]">Care You Trust, Wellness You Deserve</p>
             </div>
@@ -155,59 +142,45 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Form Body */}
         <div className="p-6 space-y-5">
-          {mode !== 'admin' ? (
-            <>
-              {/* Social Sign In Buttons */}
-              <div className="space-y-2">
-                <button
-                  type="button"
-                  onClick={() => handleSocialLogin('google')}
-                  className="w-full py-2.5 px-3 bg-white hover:bg-[#f4efe9] border border-[#ddd7cd] rounded-lg text-xs font-semibold text-[#3b4349] flex items-center justify-center space-x-2 shadow-2xs transition cursor-pointer"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
-                    <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
-                    <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.04 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
-                    <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
-                  </svg>
-                  <span>Continue with Google Account</span>
-                </button>
+          {/* Social Sign In Buttons */}
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => handleSocialLogin('google')}
+              className="w-full py-2.5 px-3 bg-white hover:bg-[#f4efe9] border border-[#ddd7cd] rounded-lg text-xs font-semibold text-[#3b4349] flex items-center justify-center space-x-2 shadow-2xs transition cursor-pointer"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+                <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+                <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.04 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+              </svg>
+              <span>Continue with Google Account</span>
+            </button>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSocialLogin('apple')}
-                    className="py-2 px-3 bg-white hover:bg-[#f4efe9] border border-[#ddd7cd] rounded-lg text-xs font-semibold text-[#3b4349] flex items-center justify-center space-x-1.5 cursor-pointer"
-                  >
-                    <span> Apple ID</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSocialLogin('twitter')}
-                    className="py-2 px-3 bg-white hover:bg-[#f4efe9] border border-[#ddd7cd] rounded-lg text-xs font-semibold text-[#3b4349] flex items-center justify-center space-x-1.5 cursor-pointer"
-                  >
-                    <span>𝕏 Twitter</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="relative flex py-1 items-center">
-                <div className="flex-grow border-t border-[#ebe6de]"></div>
-                <span className="flex-shrink mx-3 text-[11px] uppercase font-bold text-[#717977]">Or with email</span>
-                <div className="flex-grow border-t border-[#ebe6de]"></div>
-              </div>
-            </>
-          ) : (
-            <div className="p-3.5 rounded-xl bg-[#3b4349]/5 border border-[#3b4349]/15 flex items-start space-x-2.5 text-xs text-[#3b4349]">
-              <ShieldCheck className="w-4 h-4 text-[#7ea8a4] mt-0.5 flex-shrink-0" />
-              <div className="space-y-1">
-                <p className="font-semibold">GyneWell Master Admin Authentication</p>
-                <p className="text-[11px] text-[#575f66]">
-                  Sign in with your authorized administrator email and password to unlock the Admin Panel.
-                </p>
-              </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => handleSocialLogin('apple')}
+                className="py-2 px-3 bg-white hover:bg-[#f4efe9] border border-[#ddd7cd] rounded-lg text-xs font-semibold text-[#3b4349] flex items-center justify-center space-x-1.5 cursor-pointer"
+              >
+                <span> Apple ID</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSocialLogin('twitter')}
+                className="py-2 px-3 bg-white hover:bg-[#f4efe9] border border-[#ddd7cd] rounded-lg text-xs font-semibold text-[#3b4349] flex items-center justify-center space-x-1.5 cursor-pointer"
+              >
+                <span>𝕏 Twitter</span>
+              </button>
             </div>
-          )}
+          </div>
+
+          <div className="relative flex py-1 items-center">
+            <div className="flex-grow border-t border-[#ebe6de]"></div>
+            <span className="flex-shrink mx-3 text-[11px] uppercase font-bold text-[#717977]">Or with email</span>
+            <div className="flex-grow border-t border-[#ebe6de]"></div>
+          </div>
 
           {/* Email / Password Form */}
           <form onSubmit={handleSubmit} className="space-y-3 text-xs">
@@ -230,14 +203,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
             <div>
               <label htmlFor="auth-email" className="block font-semibold text-[#3b4349] mb-1">
-                {mode === 'admin' ? 'Administrator Email' : 'Email Address'}
+                Clinical Email Address
               </label>
               <input
                 id="auth-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder={mode === 'admin' ? 'admin@gynewell.clinic' : 'name@clinic.org'}
+                placeholder="name@clinic.org"
                 className="w-full p-2.5 bg-white border border-[#ddd7cd] rounded-lg text-[#3b4349]"
                 required
               />
@@ -268,28 +241,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className={`w-full py-3 text-white font-bold rounded-lg shadow-sm transition disabled:opacity-50 cursor-pointer flex items-center justify-center space-x-1.5 ${
-                mode === 'admin'
-                  ? 'bg-[#3b4349] hover:bg-[#2a3035]'
-                  : 'bg-[#7ea8a4] hover:bg-[#6d9793]'
-              }`}
+              className="w-full py-3 bg-[#7ea8a4] hover:bg-[#6d9793] text-white font-bold rounded-lg shadow-sm transition disabled:opacity-50 cursor-pointer flex items-center justify-center space-x-1.5"
             >
-              {mode === 'admin' && <Lock className="w-3.5 h-3.5 text-[#7ea8a4]" />}
               <span>
                 {isSubmitting
                   ? 'Authenticating...'
-                  : mode === 'admin'
-                    ? 'Sign In as Administrator'
-                    : mode === 'login'
-                      ? 'Sign In to GyneWell'
-                      : 'Create Account'}
+                  : mode === 'login'
+                    ? 'Sign In'
+                    : 'Create Account'}
               </span>
             </button>
           </form>
 
           {/* Mode Switchers */}
           <div className="text-center pt-2 text-xs text-[#575f66] space-y-2 border-t border-[#ebe6de]">
-            {mode === 'login' && (
+            {mode === 'login' ? (
               <p>
                 New to GyneWell?{' '}
                 <button
@@ -300,8 +266,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   Register Account
                 </button>
               </p>
-            )}
-            {mode === 'register' && (
+            ) : (
               <p>
                 Already have an account?{' '}
                 <button
@@ -310,27 +275,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   className="font-bold text-[#7ea8a4] hover:underline cursor-pointer"
                 >
                   Sign In
-                </button>
-              </p>
-            )}
-            {mode === 'admin' ? (
-              <p>
-                <button
-                  type="button"
-                  onClick={() => resetAndSwitchMode('login')}
-                  className="font-semibold text-[#7ea8a4] hover:underline cursor-pointer"
-                >
-                  ← Back to Customer Sign In
-                </button>
-              </p>
-            ) : (
-              <p>
-                <button
-                  type="button"
-                  onClick={() => resetAndSwitchMode('admin')}
-                  className="text-[11px] font-medium text-[#717977] hover:text-[#3b4349] hover:underline cursor-pointer"
-                >
-                  Administrator Sign In
                 </button>
               </p>
             )}
