@@ -1,6 +1,7 @@
 import React from 'react';
 import { BookOpen, ShoppingBag, ShieldCheck, RefreshCw, User, Search } from 'lucide-react';
 import { UserProfile, CartItem } from '../types.ts';
+import { isAdminUser } from '../utils/shop-logic.ts';
 
 interface NavbarProps {
   activeTab: 'catalog' | 'reader' | 'admin' | 'profile';
@@ -28,6 +29,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   setSearchQuery
 }) => {
   const totalCartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
+  const showAdminNav = isAdminUser(currentUser);
 
   return (
     <header className="sticky top-0 z-40 bg-[#faf8f5]/95 backdrop-blur-md border-b border-[#3b4349]/10 transition-all">
@@ -55,62 +57,63 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Main Navigation */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-20">
+        <div className="flex items-center justify-between gap-4 h-20">
           
           {/* Logo & Brand Identity matching Brand Board */}
-          <div 
+          <button
+            type="button"
             onClick={() => setActiveTab('catalog')} 
-            className="cursor-pointer flex items-center space-x-3.5 group"
+            className="cursor-pointer flex items-center space-x-3 group flex-shrink-0 text-left"
           >
             <img
               src="/assets/aistudio/GyneWell_dp_1d15eb01.png"
               alt="GyneWell Care & Wellness Logo"
-              className="w-12 h-12 object-contain transition-transform group-hover:scale-105 drop-shadow-xs"
+              className="w-11 h-11 object-contain transition-transform group-hover:scale-105 drop-shadow-xs flex-shrink-0"
             />
             <div>
               <div className="flex items-center space-x-2">
-                <span className="font-serif text-2xl font-bold tracking-tight text-[#3b4349]">
+                <span className="font-sans text-xl font-bold tracking-tight text-[#3b4349] whitespace-nowrap">
                   GyneWell
                 </span>
-                <span className="text-[10px] tracking-widest uppercase bg-[#7ea8a4]/20 text-[#3b4349] font-bold px-2 py-0.5 rounded-full">
+                <span className="hidden xl:inline-block text-[10px] tracking-widest uppercase bg-[#7ea8a4]/20 text-[#3b4349] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
                   Care & Wellness
                 </span>
               </div>
-              <p className="text-[11px] text-[#717977] font-medium tracking-wide">
+              <p className="text-[11px] text-[#717977] font-medium tracking-wide whitespace-nowrap">
                 Care You Trust, Wellness You Deserve
               </p>
             </div>
-          </div>
+          </button>
 
           {/* Search bar (desktop) */}
-          <div className="hidden md:flex items-center flex-1 max-w-xs mx-6">
+          <div className="hidden md:flex items-center flex-1 min-w-[200px] max-w-sm">
             <div className="relative w-full">
-              <Search className="w-4 h-4 text-[#717977] absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-[#717977] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Search monographs, clinical topics, ISBN..."
+                placeholder="Search PDF monographs, topics, ISBN..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-xs bg-[#f4efe9] border border-[#ddd7cd] rounded-lg text-[#3b4349] placeholder-[#717977] focus:outline-none focus:border-[#7ea8a4] focus:ring-1 focus:ring-[#7ea8a4] transition"
+                className="w-full pl-9 pr-3 py-2 text-xs bg-[#f4efe9] border border-[#ddd7cd] rounded-lg text-[#3b4349] placeholder-[#717977] focus:outline-none focus:border-[#7ea8a4] focus:ring-1 focus:ring-[#7ea8a4] transition"
               />
             </div>
           </div>
 
           {/* Center Navigation Links */}
-          <nav className="hidden lg:flex items-center space-x-1">
+          <nav className="hidden lg:flex items-center space-x-1 flex-shrink-0">
             <button
               onClick={() => setActiveTab('catalog')}
-              className={`px-3.5 py-2 text-sm font-semibold rounded-lg transition-colors ${
+              className={`px-3 py-2 text-sm font-semibold rounded-lg whitespace-nowrap transition-colors cursor-pointer ${
                 activeTab === 'catalog'
                   ? 'bg-[#efeeeb] text-[#3b4349]'
                   : 'text-[#404847] hover:text-[#3b4349] hover:bg-[#f5f3f0]'
               }`}
             >
-              Publications & Monographs
+              PDF Catalog
             </button>
             <button
               onClick={() => setActiveTab('reader')}
-              className={`px-3.5 py-2 text-sm font-semibold rounded-lg flex items-center space-x-1.5 transition-colors ${
+              className={`px-3 py-2 text-sm font-semibold rounded-lg flex items-center space-x-1.5 whitespace-nowrap transition-colors cursor-pointer ${
                 activeTab === 'reader'
                   ? 'bg-[#efeeeb] text-[#3b4349]'
                   : 'text-[#404847] hover:text-[#3b4349] hover:bg-[#f5f3f0]'
@@ -119,36 +122,28 @@ export const Navbar: React.FC<NavbarProps> = ({
               <BookOpen className="w-4 h-4 text-[#7ea8a4]" />
               <span>Clinical Reader</span>
             </button>
-            <button
-              onClick={() => setActiveTab('admin')}
-              className={`px-3.5 py-2 text-sm font-semibold rounded-lg flex items-center space-x-1.5 transition-colors ${
-                activeTab === 'admin'
-                  ? 'bg-[#3b4349] text-white shadow-xs'
-                  : 'text-[#c98b8b] hover:text-[#3b4349] hover:bg-[#c98b8b]/15'
-              }`}
-            >
-              <ShieldCheck className="w-4 h-4 text-[#7ea8a4]" />
-              <span>Admin Panel</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            </button>
+            {showAdminNav && (
+              <button
+                onClick={() => setActiveTab('admin')}
+                className={`px-3 py-2 text-sm font-semibold rounded-lg flex items-center space-x-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                  activeTab === 'admin'
+                    ? 'bg-[#3b4349] text-white shadow-xs'
+                    : 'text-[#845050] hover:text-[#3b4349] hover:bg-[#c98b8b]/15'
+                }`}
+              >
+                <ShieldCheck className="w-4 h-4 text-[#7ea8a4]" />
+                <span>Admin Panel</span>
+              </button>
+            )}
           </nav>
 
           {/* Right Action Icons & Auth */}
-          <div className="flex items-center space-x-3">
-            {/* Live Sync cloud pill */}
-            <div 
-              title={lastSyncedText} 
-              className="hidden sm:flex items-center space-x-1 text-xs text-[#575f66] bg-[#f4efe9] px-2.5 py-1 rounded-full border border-[#ebe6de]"
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="text-[11px] font-medium text-[#404847]">Live Cloud</span>
-            </div>
-
+          <div className="flex items-center space-x-2.5 flex-shrink-0">
             {/* Shopping Bag Button */}
             <button
               onClick={onOpenCart}
               aria-label="Open Shopping Cart"
-              className="relative p-2.5 text-[#3b4349] hover:text-[#2a3035] bg-[#f4efe9] hover:bg-[#eae4dc] border border-[#ddd7cd] rounded-lg transition"
+              className="relative p-2.5 text-[#3b4349] hover:text-[#2a3035] bg-[#f4efe9] hover:bg-[#eae4dc] border border-[#ddd7cd] rounded-lg transition cursor-pointer"
             >
               <ShoppingBag className="w-5 h-5 text-[#7ea8a4]" />
               {totalCartCount > 0 && (
@@ -160,34 +155,35 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {/* User Account / Auth */}
             {currentUser ? (
-              <div 
+              <button
+                type="button"
                 onClick={() => setActiveTab('profile')}
-                className="cursor-pointer flex items-center space-x-2 bg-[#f4efe9] hover:bg-[#eae4dc] border border-[#ddd7cd] py-1.5 px-3 rounded-lg transition"
+                className="cursor-pointer flex items-center space-x-2 bg-[#f4efe9] hover:bg-[#eae4dc] border border-[#ddd7cd] py-1.5 px-3 rounded-lg transition text-left"
               >
                 {currentUser.avatar ? (
                   <img
                     src={currentUser.avatar}
                     alt={currentUser.name}
-                    className="w-7 h-7 rounded-full object-cover ring-1 ring-[#c98b8b]"
+                    className="w-7 h-7 rounded-full object-cover ring-1 ring-[#c98b8b] flex-shrink-0"
                   />
                 ) : (
-                  <div className="w-7 h-7 rounded-full bg-[#7ea8a4] text-white flex items-center justify-center text-xs font-bold">
+                  <div className="w-7 h-7 rounded-full bg-[#7ea8a4] text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
                     {currentUser.name.charAt(0)}
                   </div>
                 )}
-                <div className="hidden sm:block text-left">
-                  <div className="text-xs font-bold text-[#3b4349] max-w-[115px] truncate leading-tight">
+                <div className="hidden sm:block">
+                  <div className="text-xs font-bold text-[#3b4349] max-w-[125px] truncate leading-tight">
                     {currentUser.name}
                   </div>
                   <div className="text-[10px] text-[#717977] uppercase font-semibold">
                     {currentUser.role === 'admin' ? 'Master Admin' : 'Customer'}
                   </div>
                 </div>
-              </div>
+              </button>
             ) : (
               <button
                 onClick={onOpenAuth}
-                className="flex items-center space-x-1.5 bg-[#7ea8a4] hover:bg-[#6d9793] text-white text-xs font-semibold px-3.5 py-2 rounded-lg shadow-xs transition"
+                className="flex items-center space-x-1.5 bg-[#7ea8a4] hover:bg-[#6d9793] text-white text-xs font-semibold px-3.5 py-2 rounded-lg shadow-xs transition cursor-pointer whitespace-nowrap"
               >
                 <User className="w-3.5 h-3.5" />
                 <span>Sign In / Onboard</span>
@@ -204,7 +200,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               activeTab === 'catalog' ? 'bg-[#3b4349] text-white' : 'text-[#404847] bg-[#f4efe9]'
             }`}
           >
-            Publications
+            PDF Catalog
           </button>
           <button
             onClick={() => setActiveTab('reader')}
@@ -214,14 +210,16 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             Clinical Reader
           </button>
-          <button
-            onClick={() => setActiveTab('admin')}
-            className={`px-3 py-1.5 rounded-md font-semibold whitespace-nowrap ${
-              activeTab === 'admin' ? 'bg-[#3b4349] text-white' : 'text-[#c98b8b] bg-[#c98b8b]/15'
-            }`}
-          >
-            Admin Panel
-          </button>
+          {showAdminNav && (
+            <button
+              onClick={() => setActiveTab('admin')}
+              className={`px-3 py-1.5 rounded-md font-semibold whitespace-nowrap ${
+                activeTab === 'admin' ? 'bg-[#3b4349] text-white' : 'text-[#c98b8b] bg-[#c98b8b]/15'
+              }`}
+            >
+              Admin Panel
+            </button>
+          )}
           {currentUser && (
             <button
               onClick={() => setActiveTab('profile')}

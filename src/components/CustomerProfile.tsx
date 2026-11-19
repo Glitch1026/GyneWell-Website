@@ -5,7 +5,8 @@ import {
   FileText, 
   ShoppingBag, 
   CheckCircle2, 
-  LogOut
+  LogOut,
+  Download
 } from 'lucide-react';
 import { UserProfile, Product, Order } from '../types.ts';
 import { formatCurrency } from '../utils/shop-logic.ts';
@@ -66,14 +67,14 @@ export const CustomerProfile: React.FC<CustomerProfileProps> = ({
               className="w-16 h-16 rounded-full object-cover ring-2 ring-[#c98b8b]"
             />
           ) : (
-            <div className="w-16 h-16 rounded-full bg-[#3b4349] text-white font-serif text-2xl flex items-center justify-center font-bold">
+            <div className="w-16 h-16 rounded-full bg-[#3b4349] text-white font-sans text-2xl flex items-center justify-center font-bold">
               {currentUser.name.charAt(0)}
             </div>
           )}
 
           <div>
             <div className="flex items-center space-x-2">
-              <h1 className="font-serif text-2xl font-bold text-[#3b4349]">
+              <h1 className="font-sans text-2xl font-bold text-[#3b4349]">
                 {currentUser.name}
               </h1>
               {currentUser.role === 'admin' ? (
@@ -161,8 +162,8 @@ export const CustomerProfile: React.FC<CustomerProfileProps> = ({
           {purchasedProducts.length === 0 ? (
             <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-[#ddd7cd]">
               <BookOpen className="w-12 h-12 text-[#7ea8a4] mx-auto mb-3 opacity-50" />
-              <h3 className="font-serif text-lg font-bold text-[#3b4349]">No Monographs in Your Library Yet</h3>
-              <p className="text-xs text-[#575f66] mt-1">Purchased physical and digital monographs unlock instantly here.</p>
+              <h3 className="font-sans text-lg font-bold text-[#3b4349]">No Clinical E-Books in Your Library Yet</h3>
+              <p className="text-xs text-[#575f66] mt-1">Purchased monographs unlock immediately here with instant cloud reader and DRM-free downloads.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -178,12 +179,12 @@ export const CustomerProfile: React.FC<CustomerProfileProps> = ({
                     <div className="flex-1 min-w-0 flex flex-col justify-between">
                       <div>
                         <span className="text-[10px] font-bold uppercase tracking-wider text-[#3b4349] bg-[#7ea8a4]/15 px-2 py-0.5 rounded">
-                          Digital Edition Unlocked
+                          PDF E-Book Unlocked
                         </span>
-                        <h4 className="font-serif text-base font-bold text-[#3b4349] mt-1 truncate">
+                        <h4 className="font-sans text-base font-bold text-[#3b4349] mt-1 truncate">
                           {prod.title}
                         </h4>
-                        <p className="text-xs text-[#575f66]">By {prod.author}</p>
+                        <p className="text-xs text-[#575f66]">By {prod.author} • {prod.pages} pages ({prod.fileSizeMb} MB PDF)</p>
                       </div>
 
                       <div className="pt-2">
@@ -203,13 +204,25 @@ export const CustomerProfile: React.FC<CustomerProfileProps> = ({
                           <div className="text-[11px] text-[#717977] mb-2">Ready to read</div>
                         )}
 
-                        <button
-                          onClick={() => onOpenReader(prod)}
-                          className="w-full py-2 bg-[#7ea8a4] hover:bg-[#6d9793] text-white text-xs font-bold rounded-lg flex items-center justify-center space-x-1.5 shadow-2xs transition"
-                        >
-                          <BookOpen className="w-3.5 h-3.5" />
-                          <span>Open in GyneWell Reader</span>
-                        </button>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => onOpenReader(prod)}
+                            className="flex-1 py-2 bg-[#7ea8a4] hover:bg-[#6d9793] text-white text-xs font-bold rounded-lg flex items-center justify-center space-x-1.5 shadow-2xs transition cursor-pointer"
+                          >
+                            <BookOpen className="w-3.5 h-3.5" />
+                            <span>Read Online</span>
+                          </button>
+                          <a
+                            href={prod.pdfUrl || `/api/products/${prod.id}/pdf`}
+                            download={prod.pdfFileName}
+                            aria-label={`Download PDF for ${prod.title}`}
+                            className="px-3 py-2 bg-[#f4efe9] hover:bg-[#eae4dc] text-[#3b4349] rounded-lg border border-[#ddd7cd] transition inline-flex items-center space-x-1 text-xs font-semibold cursor-pointer"
+                            title="Download PDF"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>PDF</span>
+                          </a>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -226,7 +239,7 @@ export const CustomerProfile: React.FC<CustomerProfileProps> = ({
           {(currentUser.notes || []).length === 0 ? (
             <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-[#ddd7cd]">
               <FileText className="w-12 h-12 text-[#7ea8a4] mx-auto mb-3 opacity-50" />
-              <h3 className="font-serif text-lg font-bold text-[#3b4349]">No Clinical Annotations Yet</h3>
+              <h3 className="font-sans text-lg font-bold text-[#3b4349]">No Clinical Annotations Yet</h3>
               <p className="text-xs text-[#575f66] mt-1">Open any chapter in the Clinical Reader to highlight text and take clinical notes.</p>
             </div>
           ) : (
@@ -259,7 +272,7 @@ export const CustomerProfile: React.FC<CustomerProfileProps> = ({
           {orders.length === 0 ? (
             <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-[#ddd7cd]">
               <ShoppingBag className="w-12 h-12 text-[#7ea8a4] mx-auto mb-3 opacity-50" />
-              <h3 className="font-serif text-lg font-bold text-[#3b4349]">No Recent Orders</h3>
+              <h3 className="font-sans text-lg font-bold text-[#3b4349]">No Recent Orders</h3>
               <p className="text-xs text-[#575f66] mt-1">Monographs purchased will be recorded here with official receipts.</p>
             </div>
           ) : (

@@ -1,11 +1,11 @@
 import React from 'react';
-import { BookOpen, ShoppingBag, Award, Sparkles, CheckCircle2, ChevronRight } from 'lucide-react';
-import { Product } from '../types.ts';
+import { BookOpen, Award, Sparkles, CheckCircle2, ChevronRight, Download, FileText, Zap } from 'lucide-react';
+import type { Product } from '../types.ts';
 
 interface HeroSpotlightProps {
   featuredProduct: Product;
   onReadSample: (product: Product) => void;
-  onAddToCart: (product: Product, format: 'Hardcover' | 'EPUB') => void;
+  onAddToCart: (product: Product) => void;
 }
 
 export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
@@ -26,7 +26,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
               className="w-10 h-10 object-contain"
             />
             <div>
-              <span className="font-serif font-bold text-[#3b4349] text-base">
+              <span className="font-sans font-bold text-[#3b4349] text-base">
                 GyneWell Care & Wellness
               </span>
               <p className="text-xs text-[#717977] font-medium">
@@ -39,7 +39,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
               Dr. Oluremi Ilupeju, MD, FACOG
             </span>
             <span className="bg-[#c98b8b]/15 text-[#845050] px-3 py-1 rounded-full border border-[#c98b8b]/30 hidden md:inline-block">
-              Clinical Monograph Series
+              Clinical PDF E-Book Library
             </span>
           </div>
         </div>
@@ -55,20 +55,26 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
             <div className="flex flex-wrap items-center gap-2.5">
               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold tracking-wider bg-[#c98b8b]/15 text-[#845050] border border-[#c98b8b]/30">
                 <Sparkles className="w-3.5 h-3.5 mr-1 text-[#c98b8b]" />
-                Featured Clinical Monograph
+                Featured Clinical PDF
               </span>
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold tracking-wider bg-[#7ea8a4]/15 text-[#3b4349] border border-[#7ea8a4]/30">
-                <Award className="w-3.5 h-3.5 mr-1 text-[#7ea8a4]" />
-                {featuredProduct.cmeCredits} AMA PRA Category 1 Credits™
+              {featuredProduct.cmeCredits ? (
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold tracking-wider bg-[#7ea8a4]/15 text-[#3b4349] border border-[#7ea8a4]/30">
+                  <Award className="w-3.5 h-3.5 mr-1 text-[#7ea8a4]" />
+                  {featuredProduct.cmeCredits} AMA PRA Category 1 Credits™
+                </span>
+              ) : null}
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100/70 text-emerald-800 border border-emerald-300">
+                <Zap className="w-3 h-3 mr-1 text-emerald-600" />
+                Instant PDF Download
               </span>
               <span className="text-xs text-[#575f66] font-medium">
-                {featuredProduct.edition}
+                {featuredProduct.editionVersion}
               </span>
             </div>
 
             {/* Monograph Title & Subtitle */}
             <div className="space-y-3">
-              <h1 className="font-serif text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-tight text-[#3b4349] leading-tight">
+              <h1 className="font-sans text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-tight text-[#3b4349] leading-tight">
                 {featuredProduct.title}
               </h1>
               <p className="text-base sm:text-lg text-[#575f66] leading-relaxed max-w-2xl font-normal">
@@ -76,7 +82,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
               </p>
             </div>
 
-            {/* Author Citation Block (Delicate double-ring in rose quartz featuring real portrait) */}
+            {/* Author Citation Block */}
             <div className="flex items-center space-x-4 bg-[#ffffff]/90 backdrop-blur-sm p-3.5 rounded-xl border border-[#ebe6de] shadow-xs max-w-xl">
               <div className="relative p-0.5 rounded-full ring-2 ring-[#c98b8b] ring-offset-2 ring-offset-[#faf8f5] flex-shrink-0">
                 <img
@@ -106,23 +112,16 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
             {/* Action Buttons */}
             <div className="flex flex-wrap items-center gap-3.5 pt-2">
               <button
-                onClick={() => onAddToCart(featuredProduct, 'Hardcover')}
-                className="inline-flex items-center justify-center bg-[#7ea8a4] hover:bg-[#6d9793] text-[#faf8f5] text-sm font-semibold px-6 py-3 rounded-lg shadow-sm transition hover:shadow-md"
+                onClick={() => onAddToCart(featuredProduct)}
+                className="inline-flex items-center justify-center bg-[#7ea8a4] hover:bg-[#6d9793] text-[#faf8f5] text-sm font-semibold px-6 py-3 rounded-lg shadow-sm transition hover:shadow-md cursor-pointer"
               >
-                <ShoppingBag className="w-4 h-4 mr-2" />
-                <span>Order Monograph (${featuredProduct.price.toFixed(2)})</span>
-              </button>
-
-              <button
-                onClick={() => onAddToCart(featuredProduct, 'EPUB')}
-                className="inline-flex items-center justify-center bg-[#faf8f5] hover:bg-[#c98b8b]/10 text-[#845050] border border-[#c98b8b] text-sm font-semibold px-5 py-3 rounded-lg transition"
-              >
-                <span>Instant EPUB (${featuredProduct.digitalPrice.toFixed(2)})</span>
+                <Download className="w-4 h-4 mr-2" />
+                <span>Buy PDF E-Book (${featuredProduct.price.toFixed(2)})</span>
               </button>
 
               <button
                 onClick={() => onReadSample(featuredProduct)}
-                className="inline-flex items-center text-[#3b4349] hover:text-[#2a3035] text-sm font-semibold px-3 py-3 border-b-2 border-transparent hover:border-[#3b4349] transition"
+                className="inline-flex items-center bg-[#faf8f5] hover:bg-[#f4efe9] text-[#3b4349] border border-[#ddd7cd] text-sm font-semibold px-5 py-3 rounded-lg transition cursor-pointer"
               >
                 <BookOpen className="w-4 h-4 mr-1.5 text-[#7ea8a4]" />
                 <span>Read Free Sample Chapter</span>
@@ -132,7 +131,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
 
             {/* Peer Review Callout Quote */}
             <div className="pt-2">
-              <blockquote className="border-l-2 border-[#7ea8a4] pl-4 italic font-serif text-sm text-[#404847]">
+              <blockquote className="border-l-2 border-[#7ea8a4] pl-4 italic font-sans text-sm text-[#404847]">
                 "{featuredProduct.peerReviewQuote}"
                 <footer className="mt-1 text-xs not-italic font-sans text-[#717977] font-medium">
                   — {featuredProduct.peerReviewSource}
@@ -142,7 +141,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
 
           </div>
 
-          {/* Right Column: Visual Book Stand & Cover */}
+          {/* Right Column: Visual Book Stand & Digital Cover */}
           <div className="lg:col-span-5 flex justify-center">
             <div className="relative w-full max-w-sm sm:max-w-md">
               
@@ -152,7 +151,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
               {/* Monograph Card Container */}
               <div className="relative bg-[#ffffff] border border-[#ebe6de] rounded-2xl p-5 shadow-lg">
                 
-                {/* Book Cover Image with physical spine treatment */}
+                {/* Book Cover Image */}
                 <div className="relative rounded-xl overflow-hidden aspect-[3/4] shadow-md group">
                   <img
                     src={featuredProduct.coverImage}
@@ -172,20 +171,21 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
                     />
                   </div>
 
-                  {/* Digital Badge */}
-                  <div className="absolute top-3 right-3 bg-[#3b4349]/90 backdrop-blur-md text-[#faf8f5] text-[11px] font-semibold px-2.5 py-1 rounded-md shadow-xs">
-                    Print & Digital
+                  {/* PDF Only Badge */}
+                  <div className="absolute top-3 right-3 bg-[#3b4349]/90 backdrop-blur-md text-[#faf8f5] text-[11px] font-semibold px-2.5 py-1 rounded-md shadow-xs flex items-center gap-1">
+                    <FileText className="w-3 h-3 text-[#7ea8a4]" />
+                    <span>PDF E-Book</span>
                   </div>
 
                   {/* Quick Reader Button Overlay on Hover */}
                   <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex items-center justify-between opacity-95">
                     <div>
-                      <p className="text-white text-xs font-semibold">{featuredProduct.pages} Pages • Indexed</p>
-                      <p className="text-[#a4cfca] text-[11px]">{featuredProduct.sampleChapters.length} Clinical Chapters Available</p>
+                      <p className="text-white text-xs font-semibold">{featuredProduct.pages} Pages • High-Res PDF ({featuredProduct.fileSizeMb} MB)</p>
+                      <p className="text-[#a4cfca] text-[11px]">{featuredProduct.sampleChapters.length} Clinical Chapters Included</p>
                     </div>
                     <button
                       onClick={() => onReadSample(featuredProduct)}
-                      className="bg-[#7ea8a4] hover:bg-[#6d9793] text-white text-xs font-bold px-3 py-1.5 rounded-md flex items-center shadow-xs"
+                      className="bg-[#7ea8a4] hover:bg-[#6d9793] text-white text-xs font-bold px-3 py-1.5 rounded-md flex items-center shadow-xs cursor-pointer"
                     >
                       <BookOpen className="w-3.5 h-3.5 mr-1" />
                       Read
@@ -193,11 +193,12 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
                   </div>
                 </div>
 
-                {/* Micro meta details */}
+                {/* Digital meta details */}
                 <div className="mt-4 pt-3 border-t border-[#f4efe9] flex items-center justify-between text-xs text-[#575f66]">
-                  <span>ISBN: {featuredProduct.isbn}</span>
-                  <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded">
-                    In Stock ({featuredProduct.stock} left)
+                  <span className="font-mono text-[11px]">ISBN: {featuredProduct.isbn}</span>
+                  <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>Instant PDF ({featuredProduct.licensesIssued.toLocaleString()} Licensed)</span>
                   </span>
                 </div>
 

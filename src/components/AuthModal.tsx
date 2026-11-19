@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Lock, ShieldCheck, AlertCircle } from 'lucide-react';
 import { UserProfile } from '../types.ts';
 
@@ -13,14 +13,34 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   onLoginSuccess
 }) => {
-  if (!isOpen) return null;
-
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<'login' | 'register' | 'admin'>('login');
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [fullName, setFullName] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setMode('login');
+      setEmail('');
+      setPassword('');
+      setFullName('');
+      setErrorMessage('');
+      setIsSubmitting(false);
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const resetAndSwitchMode = (nextMode: 'login' | 'register' | 'admin') => {
+    setErrorMessage('');
+    setPassword('');
+    if (nextMode === 'admin') {
+      setEmail('');
+    }
+    setMode(nextMode);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,10 +48,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsSubmitting(true);
 
     try {
-      const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
-      const body = mode === 'login' 
-        ? { email, password }
-        : { email, name: fullName, password };
+      const endpoint = mode === 'register' ? '/api/auth/register' : '/api/auth/login';
+      const body = mode === 'register'
+        ? { email, name: fullName, password }
+        : { email, password };
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -46,7 +66,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return;
       }
 
+      if (mode === 'admin' && data.user?.role !== 'admin') {
+        setErrorMessage('This email does not have GyneWell administrator privileges.');
+        setIsSubmitting(false);
+        return;
+      }
+
       onLoginSuccess(data.user);
+      setPassword('');
       onClose();
     } catch (err) {
       setErrorMessage('Network error during authentication');
@@ -93,20 +120,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleQuickSwitch = async (role: 'admin' | 'customer') => {
-    const targetEmail = role === 'admin' ? 'admin@gynewell.clinic' : 'claire.watson@gmail.com';
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: targetEmail, password: 'password123' })
-    });
-    const data = await res.json();
-    if (data.success) {
-      onLoginSuccess(data.user);
-      onClose();
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-[#faf8f5] border border-[#ebe6de] rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
@@ -120,88 +133,91 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               className="w-7 h-7 object-contain"
             />
             <div>
-              <h3 className="font-serif text-lg font-bold text-[#3b4349]">
-                {mode === 'login' ? 'GyneWell Clinician Sign In' : 'Register Clinical Account'}
+              <h3 className="font-sans text-lg font-bold text-[#3b4349]">
+                {mode === 'admin'
+                  ? 'Administrator Sign In'
+                  : mode === 'login'
+                    ? 'GyneWell Sign In'
+                    : 'Register Customer Account'}
               </h3>
               <p className="text-[10px] text-[#717977]">Care You Trust, Wellness You Deserve</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-[#717977] hover:text-[#3b4349] p-1">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close sign in dialog"
+            className="text-[#717977] hover:text-[#3b4349] p-1 cursor-pointer"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Quick Demo Switchers Banner */}
-        <div className="p-4 bg-[#7ea8a4]/10 border-b border-[#7ea8a4]/20 space-y-2">
-          <p className="text-[11px] font-bold text-[#3b4349] uppercase tracking-wider">
-            Quick 1-Click Persona Access:
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => handleQuickSwitch('admin')}
-              className="py-1.5 px-2 bg-[#3b4349] text-white text-[11px] font-bold rounded-lg flex items-center justify-center space-x-1 shadow-2xs hover:bg-[#2a3035]"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-[#7ea8a4]" />
-              <span>Master Admin (Dr. Oluremi)</span>
-            </button>
-            <button
-              onClick={() => handleQuickSwitch('customer')}
-              className="py-1.5 px-2 bg-white text-[#3b4349] text-[11px] font-bold rounded-lg border border-[#ddd7cd] hover:bg-[#f4efe9]"
-            >
-              <span>Customer Account</span>
-            </button>
-          </div>
-        </div>
-
         {/* Form Body */}
         <div className="p-6 space-y-5">
-          
-          {/* Social Sign In Buttons */}
-          <div className="space-y-2">
-            <button
-              type="button"
-              onClick={() => handleSocialLogin('google')}
-              className="w-full py-2.5 px-3 bg-white hover:bg-[#f4efe9] border border-[#ddd7cd] rounded-lg text-xs font-semibold text-[#3b4349] flex items-center justify-center space-x-2 shadow-2xs transition"
-            >
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
-                <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
-                <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.04 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
-                <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
-              </svg>
-              <span>Continue with Google Account</span>
-            </button>
+          {mode !== 'admin' ? (
+            <>
+              {/* Social Sign In Buttons */}
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => handleSocialLogin('google')}
+                  className="w-full py-2.5 px-3 bg-white hover:bg-[#f4efe9] border border-[#ddd7cd] rounded-lg text-xs font-semibold text-[#3b4349] flex items-center justify-center space-x-2 shadow-2xs transition cursor-pointer"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+                    <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+                    <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.04 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                    <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                  </svg>
+                  <span>Continue with Google Account</span>
+                </button>
 
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => handleSocialLogin('apple')}
-                className="py-2 px-3 bg-white hover:bg-[#f4efe9] border border-[#ddd7cd] rounded-lg text-xs font-semibold text-[#3b4349] flex items-center justify-center space-x-1.5"
-              >
-                <span> Apple ID</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSocialLogin('twitter')}
-                className="py-2 px-3 bg-white hover:bg-[#f4efe9] border border-[#ddd7cd] rounded-lg text-xs font-semibold text-[#3b4349] flex items-center justify-center space-x-1.5"
-              >
-                <span>𝕏 Twitter</span>
-              </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSocialLogin('apple')}
+                    className="py-2 px-3 bg-white hover:bg-[#f4efe9] border border-[#ddd7cd] rounded-lg text-xs font-semibold text-[#3b4349] flex items-center justify-center space-x-1.5 cursor-pointer"
+                  >
+                    <span> Apple ID</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSocialLogin('twitter')}
+                    className="py-2 px-3 bg-white hover:bg-[#f4efe9] border border-[#ddd7cd] rounded-lg text-xs font-semibold text-[#3b4349] flex items-center justify-center space-x-1.5 cursor-pointer"
+                  >
+                    <span>𝕏 Twitter</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative flex py-1 items-center">
+                <div className="flex-grow border-t border-[#ebe6de]"></div>
+                <span className="flex-shrink mx-3 text-[11px] uppercase font-bold text-[#717977]">Or with email</span>
+                <div className="flex-grow border-t border-[#ebe6de]"></div>
+              </div>
+            </>
+          ) : (
+            <div className="p-3.5 rounded-xl bg-[#3b4349]/5 border border-[#3b4349]/15 flex items-start space-x-2.5 text-xs text-[#3b4349]">
+              <ShieldCheck className="w-4 h-4 text-[#7ea8a4] mt-0.5 flex-shrink-0" />
+              <div className="space-y-1">
+                <p className="font-semibold">GyneWell Master Admin Authentication</p>
+                <p className="text-[11px] text-[#575f66]">
+                  Sign in with your authorized administrator email and password to unlock the Admin Panel.
+                </p>
+              </div>
             </div>
-          </div>
-
-          <div className="relative flex py-1 items-center">
-            <div className="flex-grow border-t border-[#ebe6de]"></div>
-            <span className="flex-shrink mx-3 text-[11px] uppercase font-bold text-[#717977]">Or with email</span>
-            <div className="flex-grow border-t border-[#ebe6de]"></div>
-          </div>
+          )}
 
           {/* Email / Password Form */}
           <form onSubmit={handleSubmit} className="space-y-3 text-xs">
             {mode === 'register' && (
               <div>
-                <label className="block font-semibold text-[#3b4349] mb-1">Clinician Full Name & Degree</label>
+                <label htmlFor="auth-full-name" className="block font-semibold text-[#3b4349] mb-1">
+                  Full Name & Credentials
+                </label>
                 <input
+                  id="auth-full-name"
                   type="text"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
@@ -213,20 +229,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             )}
 
             <div>
-              <label className="block font-semibold text-[#3b4349] mb-1">Clinical Email Address</label>
+              <label htmlFor="auth-email" className="block font-semibold text-[#3b4349] mb-1">
+                {mode === 'admin' ? 'Administrator Email' : 'Email Address'}
+              </label>
               <input
+                id="auth-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@clinic.org"
+                placeholder={mode === 'admin' ? 'admin@gynewell.clinic' : 'name@clinic.org'}
                 className="w-full p-2.5 bg-white border border-[#ddd7cd] rounded-lg text-[#3b4349]"
                 required
               />
             </div>
 
             <div>
-              <label className="block font-semibold text-[#3b4349] mb-1">Password</label>
+              <label htmlFor="auth-password" className="block font-semibold text-[#3b4349] mb-1">
+                Password
+              </label>
               <input
+                id="auth-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -237,7 +259,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
 
             {errorMessage && (
-              <div className="text-rose-600 bg-rose-50 p-2.5 rounded-lg border border-rose-200 flex items-center space-x-1.5">
+              <div role="alert" className="text-rose-600 bg-rose-50 p-2.5 rounded-lg border border-rose-200 flex items-center space-x-1.5">
                 <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
                 <span>{errorMessage}</span>
               </div>
@@ -246,36 +268,71 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3 bg-[#7ea8a4] hover:bg-[#6d9793] text-white font-bold rounded-lg shadow-sm transition disabled:opacity-50"
+              className={`w-full py-3 text-white font-bold rounded-lg shadow-sm transition disabled:opacity-50 cursor-pointer flex items-center justify-center space-x-1.5 ${
+                mode === 'admin'
+                  ? 'bg-[#3b4349] hover:bg-[#2a3035]'
+                  : 'bg-[#7ea8a4] hover:bg-[#6d9793]'
+              }`}
             >
-              {isSubmitting ? 'Authenticating...' : mode === 'login' ? 'Sign In to GyneWell' : 'Create Clinician Account'}
+              {mode === 'admin' && <Lock className="w-3.5 h-3.5 text-[#7ea8a4]" />}
+              <span>
+                {isSubmitting
+                  ? 'Authenticating...'
+                  : mode === 'admin'
+                    ? 'Sign In as Administrator'
+                    : mode === 'login'
+                      ? 'Sign In to GyneWell'
+                      : 'Create Account'}
+              </span>
             </button>
           </form>
 
-          {/* Mode Switcher */}
-          <div className="text-center pt-2 text-xs text-[#575f66]">
-            {mode === 'login' ? (
-              <span>
+          {/* Mode Switchers */}
+          <div className="text-center pt-2 text-xs text-[#575f66] space-y-2 border-t border-[#ebe6de]">
+            {mode === 'login' && (
+              <p>
                 New to GyneWell?{' '}
                 <button
                   type="button"
-                  onClick={() => setMode('register')}
-                  className="font-bold text-[#7ea8a4] hover:underline"
+                  onClick={() => resetAndSwitchMode('register')}
+                  className="font-bold text-[#7ea8a4] hover:underline cursor-pointer"
                 >
-                  Register Clinical Account
+                  Register Account
                 </button>
-              </span>
-            ) : (
-              <span>
+              </p>
+            )}
+            {mode === 'register' && (
+              <p>
                 Already have an account?{' '}
                 <button
                   type="button"
-                  onClick={() => setMode('login')}
-                  className="font-bold text-[#7ea8a4] hover:underline"
+                  onClick={() => resetAndSwitchMode('login')}
+                  className="font-bold text-[#7ea8a4] hover:underline cursor-pointer"
                 >
                   Sign In
                 </button>
-              </span>
+              </p>
+            )}
+            {mode === 'admin' ? (
+              <p>
+                <button
+                  type="button"
+                  onClick={() => resetAndSwitchMode('login')}
+                  className="font-semibold text-[#7ea8a4] hover:underline cursor-pointer"
+                >
+                  ← Back to Customer Sign In
+                </button>
+              </p>
+            ) : (
+              <p>
+                <button
+                  type="button"
+                  onClick={() => resetAndSwitchMode('admin')}
+                  className="text-[11px] font-medium text-[#717977] hover:text-[#3b4349] hover:underline cursor-pointer"
+                >
+                  Administrator Sign In
+                </button>
+              </p>
             )}
           </div>
 

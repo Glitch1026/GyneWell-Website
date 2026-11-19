@@ -8,16 +8,17 @@ import {
   Plus, 
   Trash2, 
   Sparkles,
-  ShoppingBag
+  ShoppingBag,
+  Download
 } from 'lucide-react';
-import { Product, Chapter, UserProfile, UserNote } from '../types.ts';
+import type { Product, Chapter, UserProfile, UserNote } from '../types.ts';
 import { calculateReadingProgress } from '../utils/shop-logic.ts';
 
 interface ClinicalReaderProps {
   product: Product;
   currentUser: UserProfile | null;
   onBackToCatalog: () => void;
-  onAddToCart: (product: Product, format: 'EPUB' | 'Hardcover') => void;
+  onAddToCart: (product: Product) => void;
   onSyncUserData: (updated: Partial<UserProfile>) => void;
 }
 
@@ -126,7 +127,7 @@ export const ClinicalReader: React.FC<ClinicalReaderProps> = ({
             <span className="text-[11px] font-bold text-[#7ea8a4] tracking-wider uppercase truncate">
               {product.title}
             </span>
-            <span className="text-xs font-serif italic text-[#575f66] truncate">
+            <span className="text-xs font-sans italic text-[#575f66] truncate">
               {currentChapter ? `Chapter ${currentChapter.chapterNumber}: ${currentChapter.title}` : 'Sample'}
             </span>
           </div>
@@ -137,19 +138,19 @@ export const ClinicalReader: React.FC<ClinicalReaderProps> = ({
             <div className="flex items-center bg-[#f4efe9] rounded-lg p-0.5 border border-[#ddd7cd]">
               <button
                 onClick={() => setFontSize('sm')}
-                className={`px-2 py-1 text-xs font-serif ${fontSize === 'sm' ? 'bg-white rounded font-bold shadow-2xs' : 'text-[#717977]'}`}
+                className={`px-2 py-1 text-xs font-sans ${fontSize === 'sm' ? 'bg-white rounded font-bold shadow-2xs' : 'text-[#717977]'}`}
               >
                 A-
               </button>
               <button
                 onClick={() => setFontSize('base')}
-                className={`px-2 py-1 text-xs font-serif ${fontSize === 'base' ? 'bg-white rounded font-bold shadow-2xs' : 'text-[#717977]'}`}
+                className={`px-2 py-1 text-xs font-sans ${fontSize === 'base' ? 'bg-white rounded font-bold shadow-2xs' : 'text-[#717977]'}`}
               >
                 A
               </button>
               <button
                 onClick={() => setFontSize('lg')}
-                className={`px-2 py-1 text-xs font-serif ${fontSize === 'lg' ? 'bg-white rounded font-bold shadow-2xs' : 'text-[#717977]'}`}
+                className={`px-2 py-1 text-xs font-sans ${fontSize === 'lg' ? 'bg-white rounded font-bold shadow-2xs' : 'text-[#717977]'}`}
               >
                 A+
               </button>
@@ -197,7 +198,7 @@ export const ClinicalReader: React.FC<ClinicalReaderProps> = ({
             <span>{product.edition}</span>
           </div>
 
-          <h1 className="font-serif text-2xl sm:text-4xl font-semibold text-[#3b4349] leading-tight mb-3">
+          <h1 className="font-sans text-2xl sm:text-4xl font-semibold text-[#3b4349] leading-tight mb-3">
             {product.title}
           </h1>
           <p className="text-base sm:text-lg text-[#575f66] font-normal leading-relaxed mb-6">
@@ -249,16 +250,16 @@ export const ClinicalReader: React.FC<ClinicalReaderProps> = ({
               <span className="text-xs font-bold uppercase tracking-widest text-[#7ea8a4]">
                 Chapter {currentChapter.chapterNumber}
               </span>
-              <h2 className="font-serif text-2xl sm:text-3xl font-semibold text-[#3b4349] leading-snug">
+              <h2 className="font-sans text-2xl sm:text-3xl font-semibold text-[#3b4349] leading-snug">
                 {currentChapter.title}
               </h2>
-              <p className="text-sm font-serif italic text-[#575f66]">
+              <p className="text-sm font-sans italic text-[#575f66]">
                 {currentChapter.subtitle}
               </p>
             </header>
 
-            {/* Paragraphs in Source Serif 4 */}
-            <div className={`space-y-6 font-serif text-[#3b4349] ${fontSizeClass}`}>
+            {/* Paragraphs in clean sans-serif */}
+            <div className={`space-y-6 font-sans text-[#3b4349] ${fontSizeClass}`}>
               {currentChapter.content.map((paragraph, pIdx) => (
                 <p key={pIdx} className="leading-relaxed text-justify">
                   {paragraph}
@@ -296,7 +297,7 @@ export const ClinicalReader: React.FC<ClinicalReaderProps> = ({
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <FileText className="w-4 h-4 text-[#7ea8a4]" />
-                  <h3 className="font-serif text-base font-bold text-[#3b4349]">
+                  <h3 className="font-sans text-base font-bold text-[#3b4349]">
                     My Clinical Notes & Annotations ({chapterNotes.length})
                   </h3>
                 </div>
@@ -392,33 +393,40 @@ export const ClinicalReader: React.FC<ClinicalReaderProps> = ({
                 </button>
               </div>
 
-              {/* Purchase Full Monograph Callout Banner */}
+              {/* Purchase or Download Full PDF Callout Banner */}
               <div className="bg-[#f4efe9] border border-[#ddd7cd] rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-6">
                 <div>
                   <span className="text-xs font-bold text-[#845050] tracking-wider uppercase">
-                    GyneWell Care & Wellness Monograph
+                    GyneWell Clinical PDF Monograph
                   </span>
-                  <h4 className="font-serif text-xl font-bold text-[#3b4349] mt-1">
-                    Acquire the Complete Monograph
+                  <h4 className="font-sans text-xl font-bold text-[#3b4349] mt-1">
+                    {currentUser?.purchasedProductIds?.includes(product.id)
+                      ? 'Full PDF Unlocked in Your Library'
+                      : 'Acquire the Complete PDF Monograph'}
                   </h4>
                   <p className="text-xs sm:text-sm text-[#575f66] mt-1 max-w-md">
-                    Unlock all {product.pages} pages, 18 CME credits, full diagnostic protocols, and high-resolution anatomical plates.
+                    {product.pages} {product.pages === 1 ? 'page' : 'pages'} ({product.fileSizeMb} MB PDF){product.cmeCredits ? ` • ${product.cmeCredits} CME credits` : ''} • Instant DRM-free download.
                   </p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                  <button
-                    onClick={() => onAddToCart(product, 'EPUB')}
-                    className="px-4 py-2.5 bg-white border border-[#c98b8b] text-[#845050] hover:bg-[#c98b8b]/10 text-xs font-bold rounded-lg whitespace-nowrap"
-                  >
-                    Digital EPUB (${product.digitalPrice.toFixed(2)})
-                  </button>
-                  <button
-                    onClick={() => onAddToCart(product, 'Hardcover')}
-                    className="px-4 py-2.5 bg-[#7ea8a4] hover:bg-[#6d9793] text-white text-xs font-bold rounded-lg flex items-center justify-center space-x-1.5 whitespace-nowrap shadow-xs"
-                  >
-                    <ShoppingBag className="w-3.5 h-3.5" />
-                    <span>Hardcover (${product.price.toFixed(2)})</span>
-                  </button>
+                  {currentUser?.purchasedProductIds?.includes(product.id) ? (
+                    <a
+                      href={product.pdfUrl || `/api/products/${product.id}/pdf`}
+                      download={product.pdfFileName}
+                      className="px-5 py-2.5 bg-[#7ea8a4] hover:bg-[#6d9793] text-white text-xs font-bold rounded-lg flex items-center justify-center space-x-1.5 whitespace-nowrap shadow-xs cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download Full PDF</span>
+                    </a>
+                  ) : (
+                    <button
+                      onClick={() => onAddToCart(product)}
+                      className="px-5 py-2.5 bg-[#7ea8a4] hover:bg-[#6d9793] text-white text-xs font-bold rounded-lg flex items-center justify-center space-x-1.5 whitespace-nowrap shadow-xs cursor-pointer"
+                    >
+                      <ShoppingBag className="w-3.5 h-3.5" />
+                      <span>Buy Full PDF (${product.price.toFixed(2)})</span>
+                    </button>
+                  )}
                 </div>
               </div>
 

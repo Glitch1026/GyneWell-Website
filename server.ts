@@ -1,18 +1,216 @@
-import express, { Request, Response } from 'express';
-import { createServer as createViteServer } from 'vite';
+import express from 'express';
+import type { Request, Response } from 'express';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
+import { extractText, getDocumentProxy, getMeta } from 'unpdf';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { MONOGRAPHS_INITIAL_DATA } from './src/data/monographs.ts';
-import { Product, Order, UserProfile, CartItem, UserNote } from './src/types.ts';
-import { computeSalesMetrics, validateCreditCard, validateDiscountCode, calculateCartTotals } from './src/utils/shop-logic.ts';
+import type { Product, Order, UserProfile, CartItem, ParsedPdfDraft, ProductCategory } from './src/types.ts';
+import { computeSalesMetrics, validateCreditCard, calculateCartTotals, generateDigitalLicenseKey } from './src/utils/shop-logic.ts';
+import { isValidPdfBuffer, parseExtractedPdfText, sanitizePdfFileName, PRODUCT_CATEGORIES } from './src/utils/pdf-parser.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
-const PORT = 3000;
+const UPLOADS_DIR = path.resolve(__dirname, 'uploads', 'pdfs');
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
-app.use(express.json());
+function resolvePort(): number {
+  const portArgIdx = process.argv.indexOf('--port');
+  if (portArgIdx !== -1 && process.argv[portArgIdx + 1]) {
+    const parsed = Number(process.argv[portArgIdx + 1]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  const isProduction = process.env.NODE_ENV === 'production';
+  if (process.env.PORT) {
+    const parsed = Number(process.env.PORT);
+    // In dev containers, NGINX_PORT (e.g. 8080) may be exposed in shell PORT; always keep dev app on 3000 unless explicitly different.
+    if (Number.isFinite(parsed) && parsed > 0 && (isProduction || process.env.PORT !== process.env.NGINX_PORT)) {
+      return parsed;
+    }
+  }
+  return 3000;
+}
+
+const app = express();
+const PORT = resolvePort();
+
+app.use(express.json({ limit: '10mb' }));
+
+// Multer configuration for PDF e-book uploads (50MB max)
+const pdfUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 }
+});
+
+interface PendingUploadRecord {
+  uploadId: string;
+  filePath: string;
+  parsed: ParsedPdfDraft;
+  createdAt: number;
+}
+
+const pendingPdfUploads = new Map<string, PendingUploadRecord>();
+const productPdfPaths = new Map<string, string>();
+const generatedPdfCache = new Map<string, Uint8Array>();
+
+function toPdfSafeAscii(text: string): string {
+  return text
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/\u2022/g, '*')
+    .replace(/\u2122/g, '(TM)')
+    .replace(/[^\x20-\x7E\n]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function wrapTextLines(text: string, maxChars: number): string[] {
+  const words = toPdfSafeAscii(text).split(' ');
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (!word) continue;
+    if ((current + ' ' + word).trim().length > maxChars && current.length > 0) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = current ? `${current} ${word}` : word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+async function generateCatalogMonographPdf(product: Product): Promise<Uint8Array> {
+  const cached = generatedPdfCache.get(product.id);
+  if (cached) return cached;
+
+  const pdfDoc = await PDFDocument.create();
+  pdfDoc.setTitle(toPdfSafeAscii(product.title));
+  pdfDoc.setAuthor(toPdfSafeAscii(product.author));
+  pdfDoc.setSubject(toPdfSafeAscii(product.subtitle));
+  pdfDoc.setCreator('GyneWell Care & Wellness Clinical Press');
+
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const slate = rgb(0.23, 0.26, 0.29);
+  const teal = rgb(0.49, 0.66, 0.64);
+  const muted = rgb(0.38, 0.42, 0.44);
+
+  // Page 1: Title, Metadata & Table of Contents
+  const coverPage = pdfDoc.addPage([612, 792]);
+  let y = 730;
+
+  coverPage.drawText('GYNEWELL CARE & WELLNESS - CLINICAL PDF MONOGRAPH', {
+    x: 54,
+    y,
+    size: 10,
+    font: fontBold,
+    color: teal
+  });
+  y -= 36;
+
+  for (const line of wrapTextLines(product.title, 42)) {
+    coverPage.drawText(line, { x: 54, y, size: 22, font: fontBold, color: slate });
+    y -= 28;
+  }
+
+  y -= 4;
+  for (const line of wrapTextLines(product.subtitle, 70)) {
+    coverPage.drawText(line, { x: 54, y, size: 12, font: fontRegular, color: muted });
+    y -= 17;
+  }
+
+  y -= 16;
+  coverPage.drawText(toPdfSafeAscii(`Author: ${product.author}${product.authorTitle ? ', ' + product.authorTitle : ''}`), {
+    x: 54,
+    y,
+    size: 11,
+    font: fontBold,
+    color: slate
+  });
+  y -= 16;
+  coverPage.drawText(toPdfSafeAscii(`Category: ${product.category}   |   Edition: ${product.editionVersion}   |   ISBN: ${product.isbn}`), {
+    x: 54,
+    y,
+    size: 9.5,
+    font: fontRegular,
+    color: muted
+  });
+  y -= 28;
+
+  coverPage.drawText('CLINICAL SYNOPSIS', { x: 54, y, size: 11, font: fontBold, color: teal });
+  y -= 18;
+  for (const line of wrapTextLines(product.synopsis, 82)) {
+    coverPage.drawText(line, { x: 54, y, size: 10.5, font: fontRegular, color: slate });
+    y -= 15;
+  }
+
+  y -= 20;
+  coverPage.drawText('TABLE OF CONTENTS', { x: 54, y, size: 11, font: fontBold, color: teal });
+  y -= 18;
+  (product.tableOfContents || []).slice(0, 12).forEach((entry, idx) => {
+    coverPage.drawText(toPdfSafeAscii(`${idx + 1}. ${entry}`), {
+      x: 62,
+      y,
+      size: 10.5,
+      font: fontRegular,
+      color: slate
+    });
+    y -= 16;
+  });
+
+  // Subsequent Pages: Chapters
+  for (const chap of product.sampleChapters || []) {
+    const page = pdfDoc.addPage([612, 792]);
+    let cy = 735;
+
+    page.drawText(toPdfSafeAscii(`CHAPTER ${chap.chapterNumber}`), {
+      x: 54,
+      y: cy,
+      size: 10,
+      font: fontBold,
+      color: teal
+    });
+    cy -= 22;
+
+    for (const line of wrapTextLines(chap.title, 50)) {
+      page.drawText(line, { x: 54, y: cy, size: 16, font: fontBold, color: slate });
+      cy -= 22;
+    }
+
+    if (chap.subtitle) {
+      for (const line of wrapTextLines(chap.subtitle, 78)) {
+        page.drawText(line, { x: 54, y: cy, size: 10, font: fontRegular, color: muted });
+        cy -= 15;
+      }
+    }
+
+    cy -= 14;
+    for (const para of chap.content || []) {
+      for (const line of wrapTextLines(para, 82)) {
+        if (cy < 70) break;
+        page.drawText(line, { x: 54, y: cy, size: 10.5, font: fontRegular, color: slate });
+        cy -= 15;
+      }
+      cy -= 10;
+    }
+  }
+
+  const bytes = await pdfDoc.save();
+  generatedPdfCache.set(product.id, bytes);
+  return bytes;
+}
+
+// Health check endpoint
+app.get('/api/health', (_req: Request, res: Response) => {
+  res.json({ status: 'ok', service: 'gynewell-clinical-publishing', format: 'PDF-only', timestamp: new Date().toISOString() });
+});
 
 // In-Memory Database State for Real-Time Synchronization
 let products: Product[] = [...MONOGRAPHS_INITIAL_DATA];
@@ -25,7 +223,7 @@ let users: UserProfile[] = [
     role: 'admin',
     avatar: '/assets/aistudio/Dr_Oluremi_Ilupeju_d7f8ed13.webp',
     provider: 'email',
-    purchasedProductIds: ['postpartum-healing', 'perinatal-neurobiology', 'endocrine-arc', 'biomechanical-pelvic-health'],
+    purchasedProductIds: ['postpartum-healing', 'perinatal-neurobiology', 'endocrine-arc', 'pelvic-biomechanics'],
     readingProgress: {
       'postpartum-healing': { chapterId: 'chap-2', progressPercent: 68, lastReadAt: new Date().toISOString() }
     },
@@ -64,7 +262,7 @@ let users: UserProfile[] = [
         createdAt: new Date().toISOString()
       }
     ],
-    wishlist: ['endocrine-arc', 'biomechanical-pelvic-health'],
+    wishlist: ['endocrine-arc', 'pelvic-biomechanics'],
     createdAt: '2026-02-14T00:00:00Z'
   }
 ];
@@ -79,18 +277,20 @@ let orders: Order[] = [
       {
         productId: 'postpartum-healing',
         title: 'The Restorative Postpartum',
-        format: 'Hardcover',
-        price: 48.00,
+        format: 'PDF',
+        price: 28.00,
         quantity: 1
       }
     ],
-    subtotal: 48.00,
+    subtotal: 28.00,
     discount: 0,
-    shipping: 7.50,
-    tax: 2.40,
-    total: 57.90,
+    shipping: 0,
+    tax: 1.40,
+    total: 29.40,
     paymentMethod: 'google_pay',
     status: 'Completed',
+    licenseKeys: { 'postpartum-healing': 'GW-LIC-POST-8921-A94K2' },
+    downloadTokens: { 'postpartum-healing': 'dl_tok_8921_post' },
     createdAt: new Date(Date.now() - 3600000 * 5).toISOString()
   },
   {
@@ -102,14 +302,14 @@ let orders: Order[] = [
       {
         productId: 'perinatal-neurobiology',
         title: 'Perinatal Neurobiology & Matrescence',
-        format: 'EPUB',
+        format: 'PDF',
         price: 32.00,
         quantity: 1
       },
       {
         productId: 'endocrine-arc',
         title: 'The Endocrine Arc',
-        format: 'EPUB',
+        format: 'PDF',
         price: 26.00,
         quantity: 1
       }
@@ -122,43 +322,48 @@ let orders: Order[] = [
     total: 54.81,
     paymentMethod: 'card',
     status: 'Completed',
+    licenseKeys: {
+      'perinatal-neurobiology': 'GW-LIC-PERI-8920-F71Z0',
+      'endocrine-arc': 'GW-LIC-ENDO-8920-M32P1'
+    },
+    downloadTokens: {
+      'perinatal-neurobiology': 'dl_tok_8920_peri',
+      'endocrine-arc': 'dl_tok_8920_endo'
+    },
     createdAt: new Date(Date.now() - 3600000 * 24).toISOString()
   },
   {
     id: 'ord-8919',
-    orderNumber: 'SER-8919',
+    orderNumber: 'GW-8919',
     customerEmail: 'sarah.k@birthcenter.com',
     customerName: 'Sarah Kowalski, CNM',
     items: [
       {
-        productId: 'biomechanical-pelvic-health',
+        productId: 'pelvic-biomechanics',
         title: 'Biomechanical Pelvic Floor Restoration',
-        format: 'Hardcover',
-        price: 49.00,
-        quantity: 2
+        format: 'PDF',
+        price: 29.00,
+        quantity: 1
       }
     ],
-    subtotal: 98.00,
+    subtotal: 29.00,
     discount: 0,
     shipping: 0,
-    tax: 4.90,
-    total: 102.90,
+    tax: 1.45,
+    total: 30.45,
     paymentMethod: 'hsa_fsa',
     status: 'Completed',
+    licenseKeys: { 'pelvic-biomechanics': 'GW-LIC-PELV-8919-T88L4' },
+    downloadTokens: { 'pelvic-biomechanics': 'dl_tok_8919_pelv' },
     createdAt: new Date(Date.now() - 3600000 * 48).toISOString()
   }
 ];
 
-// Helper: current user session simulator
-function findUserById(id: string): UserProfile | undefined {
-  return users.find(u => u.id === id);
-}
-
 // ---------------------- API ROUTES ----------------------
 
-// 1. Products API
+// 1. Products API (PDF-only catalog)
 app.get('/api/products', (req: Request, res: Response) => {
-  const { category, search, format } = req.query;
+  const { category, search } = req.query;
   let result = [...products];
 
   if (category && typeof category === 'string' && category !== 'All') {
@@ -167,16 +372,12 @@ app.get('/api/products', (req: Request, res: Response) => {
 
   if (search && typeof search === 'string') {
     const q = search.toLowerCase();
-    result = result.filter(p => 
+    result = result.filter(p =>
       p.title.toLowerCase().includes(q) ||
       p.subtitle.toLowerCase().includes(q) ||
       p.author.toLowerCase().includes(q) ||
       p.synopsis.toLowerCase().includes(q)
     );
-  }
-
-  if (format && typeof format === 'string') {
-    result = result.filter(p => p.formats.includes(format as any));
   }
 
   res.json({ success: true, count: result.length, products: result });
@@ -191,11 +392,41 @@ app.get('/api/products/:id', (req: Request, res: Response) => {
   res.json({ success: true, product });
 });
 
+// Stream real PDF binary (uploaded file if uploaded by admin, or dynamically generated PDF for catalog titles)
+app.get('/api/products/:id/pdf', async (req: Request, res: Response) => {
+  const product = products.find(p => p.id === req.params.id);
+  if (!product) {
+    res.status(404).json({ success: false, error: 'PDF monograph not found' });
+    return;
+  }
+
+  const safeName = sanitizePdfFileName(product.pdfFileName || `${product.id}.pdf`);
+  const disposition = req.query.inline === '1' ? 'inline' : 'attachment';
+
+  const uploadedPath = productPdfPaths.get(product.id);
+  if (uploadedPath && fs.existsSync(uploadedPath)) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${disposition}; filename="${safeName}"`);
+    fs.createReadStream(uploadedPath).pipe(res);
+    return;
+  }
+
+  try {
+    const pdfBytes = await generateCatalogMonographPdf(product);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${disposition}; filename="${safeName}"`);
+    res.send(Buffer.from(pdfBytes));
+  } catch (err) {
+    console.error('Error generating catalog PDF:', err);
+    res.status(500).json({ success: false, error: 'Unable to prepare PDF file for download' });
+  }
+});
+
 // 2. Authentication APIs
 app.post('/api/auth/login', (req: Request, res: Response) => {
   const { email, password } = req.body;
-  if (!email) {
-    res.status(400).json({ success: false, error: 'Email is required' });
+  if (!email || !password) {
+    res.status(400).json({ success: false, error: 'Email and password are required' });
     return;
   }
 
@@ -208,7 +439,6 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
 
   let user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
   if (!user) {
-    // Auto register customer if logging in for quick demo onboarding
     user = {
       id: `user-${Date.now()}`,
       email: email.toLowerCase(),
@@ -229,7 +459,7 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
 });
 
 app.post('/api/auth/register', (req: Request, res: Response) => {
-  const { email, name, password } = req.body;
+  const { email, name } = req.body;
   if (!email || !name) {
     res.status(400).json({ success: false, error: 'Email and full name are required' });
     return;
@@ -259,17 +489,16 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
   res.json({ success: true, user: newUser, token: `mock-jwt-${newUser.id}` });
 });
 
-// Social Login endpoint (Google, Apple, Twitter/X)
 app.post('/api/auth/social', (req: Request, res: Response) => {
   const { provider, email, name, avatar } = req.body;
-  const targetEmail = (email || `practitioner-${provider}@serene.community`).toLowerCase();
+  const targetEmail = (email || `practitioner-${provider}@gynewell.community`).toLowerCase();
 
   let user = users.find(u => u.email === targetEmail);
   if (!user) {
     user = {
       id: `user-${Date.now()}`,
       email: targetEmail,
-      name: name || `Clinical Practitioner (${provider.toUpperCase()})`,
+      name: name || `Clinical Practitioner (${String(provider || 'google').toUpperCase()})`,
       role: 'customer',
       avatar: avatar || (provider === 'google' ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=260' : undefined),
       provider: provider || 'google',
@@ -290,7 +519,7 @@ app.post('/api/auth/social', (req: Request, res: Response) => {
 
 // 3. Real-Time User Data Sync API
 app.post('/api/sync', (req: Request, res: Response) => {
-  const { userId, readingProgress, bookmarks, notes, wishlist, cart } = req.body;
+  const { userId, readingProgress, bookmarks, notes, wishlist } = req.body;
   const user = users.find(u => u.id === userId);
 
   if (!user) {
@@ -328,8 +557,7 @@ app.post('/api/checkout/process', (req: Request, res: Response) => {
     return;
   }
 
-  // If card payment, run card validation check
-  if (paymentMethod === 'card' && cardDetails) {
+  if ((paymentMethod === 'card' || paymentMethod === 'hsa_fsa') && cardDetails) {
     const cardCheck = validateCreditCard(cardDetails.number, cardDetails.expiry, cardDetails.cvv);
     if (!cardCheck.valid) {
       res.status(400).json({ success: false, error: 'Card validation failed', errors: cardCheck.errors });
@@ -337,33 +565,23 @@ app.post('/api/checkout/process', (req: Request, res: Response) => {
     }
   }
 
-  // Calculate totals
   const totals = calculateCartTotals(items, promoCode);
 
-  // Check inventory stock
-  for (const item of items) {
-    const prod = products.find(p => p.id === item.productId);
-    if (prod && (item.format === 'Hardcover' || item.format === 'Paperback')) {
-      if (prod.stock < item.quantity) {
-        res.status(400).json({
-          success: false,
-          error: `Insufficient physical stock for "${prod.title}". Only ${prod.stock} units remaining.`
-        });
-        return;
-      }
-    }
-  }
+  const orderNum = `GW-${Math.floor(1000 + Math.random() * 9000)}`;
+  const licenseKeys: Record<string, string> = {};
+  const downloadTokens: Record<string, string> = {};
 
-  // Decrement physical stock
   items.forEach((item: CartItem) => {
+    licenseKeys[item.productId] = generateDigitalLicenseKey(orderNum, item.productId);
+    downloadTokens[item.productId] = `dl_token_${Math.random().toString(36).substring(2, 10)}`;
+
     const prod = products.find(p => p.id === item.productId);
-    if (prod && (item.format === 'Hardcover' || item.format === 'Paperback')) {
-      prod.stock = Math.max(0, prod.stock - item.quantity);
+    if (prod) {
+      prod.licensesIssued = (prod.licensesIssued || 0) + item.quantity;
+      prod.activeReadersCount = (prod.activeReadersCount || 0) + 1;
     }
   });
 
-  // Create Order
-  const orderNum = `GW-${Math.floor(1000 + Math.random() * 9000)}`;
   const newOrder: Order = {
     id: `ord-${Date.now()}`,
     orderNumber: orderNum,
@@ -372,24 +590,25 @@ app.post('/api/checkout/process', (req: Request, res: Response) => {
     items: items.map((i: CartItem) => ({
       productId: i.productId,
       title: i.title,
-      format: i.format,
+      format: 'PDF' as const,
       price: i.price,
       quantity: i.quantity
     })),
     subtotal: totals.subtotal,
     discount: totals.discount,
-    shipping: totals.shipping,
+    shipping: 0,
     tax: totals.tax,
     total: totals.total,
     promoCode: promoCode || undefined,
     paymentMethod: paymentMethod || 'card',
     status: 'Completed',
+    licenseKeys,
+    downloadTokens,
     createdAt: new Date().toISOString()
   };
 
   orders.unshift(newOrder);
 
-  // Update user library with digital/physical products
   if (userId) {
     const user = users.find(u => u.id === userId);
     if (user) {
@@ -401,14 +620,14 @@ app.post('/api/checkout/process', (req: Request, res: Response) => {
   res.json({
     success: true,
     order: newOrder,
-    message: 'Payment authorized and order processed successfully',
+    message: 'Payment authorized: PDF license issued & download unlocked immediately',
     receiptId: `REC-${Date.now().toString(36).toUpperCase()}`
   });
 });
 
 // 5. Orders API
 app.get('/api/orders', (req: Request, res: Response) => {
-  const { email, userId } = req.query;
+  const { email } = req.query;
   let result = [...orders];
 
   if (email && typeof email === 'string') {
@@ -429,84 +648,235 @@ app.put('/api/orders/:id/status', (req: Request, res: Response) => {
   res.json({ success: true, order });
 });
 
-// 6. Admin Panel APIs
+// 6. Admin Panel APIs (Metrics, Catalog Edit, PDF Upload -> Parse -> Publish)
 app.get('/api/admin/metrics', (_req: Request, res: Response) => {
   const metrics = computeSalesMetrics(orders, products);
   res.json({ success: true, metrics, liveTimestamp: new Date().toISOString() });
 });
 
 app.put('/api/admin/inventory/:id', (req: Request, res: Response) => {
-  const { stock, price, digitalPrice, isFeatured, lowStockThreshold } = req.body;
+  const { price, isFeatured, editionVersion, cmeCredits, licensesIssued, title, category } = req.body;
   const prod = products.find(p => p.id === req.params.id);
   if (!prod) {
-    res.status(404).json({ success: false, error: 'Monograph not found' });
+    res.status(404).json({ success: false, error: 'PDF monograph not found' });
     return;
   }
 
-  if (typeof stock === 'number') prod.stock = stock;
-  if (typeof price === 'number') prod.price = price;
-  if (typeof digitalPrice === 'number') prod.digitalPrice = digitalPrice;
+  if (typeof price === 'number' && price >= 0) prod.price = price;
   if (typeof isFeatured === 'boolean') prod.isFeatured = isFeatured;
-  if (typeof lowStockThreshold === 'number') prod.lowStockThreshold = lowStockThreshold;
+  if (typeof editionVersion === 'string' && editionVersion.trim()) prod.editionVersion = editionVersion.trim();
+  if (typeof cmeCredits === 'number' && cmeCredits >= 0) prod.cmeCredits = cmeCredits;
+  if (typeof licensesIssued === 'number' && licensesIssued >= 0) prod.licensesIssued = licensesIssued;
+  if (typeof title === 'string' && title.trim()) prod.title = title.trim();
+  if (typeof category === 'string' && PRODUCT_CATEGORIES.includes(category as ProductCategory)) {
+    prod.category = category as ProductCategory;
+  }
 
-  res.json({ success: true, product: prod, message: 'Inventory updated in real time' });
+  res.json({ success: true, product: prod, message: 'PDF e-book catalog updated in real time' });
 });
 
-app.post('/api/admin/inventory', (req: Request, res: Response) => {
+// Step 1 & 2 of Admin Workflow: Upload a real PDF, validate %PDF- signature, and parse content/metadata
+app.post('/api/admin/ebooks/parse', (req: Request, res: Response) => {
+  pdfUpload.single('file')(req, res, async (uploadErr: unknown) => {
+    if (uploadErr) {
+      const msg = uploadErr instanceof Error ? uploadErr.message : 'PDF upload error';
+      res.status(400).json({ success: false, error: msg });
+      return;
+    }
+
+    const file = req.file;
+    if (!file || !file.buffer || file.buffer.length === 0) {
+      res.status(400).json({ success: false, error: 'Please select a PDF file (.pdf) to upload.' });
+      return;
+    }
+
+    const hasPdfExtension = file.originalname.toLowerCase().endsWith('.pdf');
+    const hasAllowedMime =
+      file.mimetype === 'application/pdf' ||
+      file.mimetype === 'application/x-pdf' ||
+      file.mimetype === 'application/octet-stream';
+
+    if (!hasPdfExtension || !hasAllowedMime || !isValidPdfBuffer(file.buffer)) {
+      res.status(400).json({
+        success: false,
+        error: 'Only valid PDF files (.pdf) are supported. Non-PDF documents cannot be uploaded or parsed.'
+      });
+      return;
+    }
+
+    try {
+      const proxy = await getDocumentProxy(new Uint8Array(file.buffer));
+      const metaResult = await getMeta(proxy).catch(() => ({ info: {} as Record<string, unknown> }));
+      const textResult = await extractText(proxy, { mergePages: false });
+
+      const pages = Array.isArray(textResult.text)
+        ? textResult.text.map(p => String(p || ''))
+        : [String(textResult.text || '')];
+
+      const info = (metaResult?.info || {}) as Record<string, unknown>;
+      const parsedCore = parseExtractedPdfText({
+        pages,
+        fileName: file.originalname,
+        fileSizeBytes: file.size,
+        metadata: {
+          title: typeof info.Title === 'string' ? info.Title : undefined,
+          author: typeof info.Author === 'string' ? info.Author : undefined,
+          subject: typeof info.Subject === 'string' ? info.Subject : undefined
+        }
+      });
+
+      const uploadId = `pdf-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const storedPath = path.join(UPLOADS_DIR, `${uploadId}.pdf`);
+      fs.writeFileSync(storedPath, file.buffer);
+
+      const draft: ParsedPdfDraft = {
+        uploadId,
+        ...parsedCore
+      };
+
+      pendingPdfUploads.set(uploadId, {
+        uploadId,
+        filePath: storedPath,
+        parsed: draft,
+        createdAt: Date.now()
+      });
+
+      res.json({
+        success: true,
+        uploadId,
+        parsed: draft,
+        message: `Parsed ${draft.pages} PDF page(s) and extracted ${draft.sampleChapters.length} chapter section(s).`
+      });
+    } catch (err) {
+      console.error('PDF parsing error:', err);
+      res.status(400).json({
+        success: false,
+        error: 'The uploaded PDF could not be parsed. Please ensure the file is not corrupted or password-encrypted.'
+      });
+    }
+  });
+});
+
+// Step 3 of Admin Workflow: Post parsed & reviewed PDF e-book directly to customer storefront
+app.post('/api/admin/ebooks/publish', (req: Request, res: Response) => {
+  const {
+    uploadId,
+    title,
+    subtitle,
+    author,
+    category,
+    price,
+    editionVersion,
+    isbn,
+    cmeCredits,
+    synopsis,
+    coverImage,
+    tableOfContents,
+    sampleChapters
+  } = req.body;
+
+  if (!uploadId || typeof uploadId !== 'string') {
+    res.status(400).json({ success: false, error: 'A parsed PDF upload is required before posting an e-book.' });
+    return;
+  }
+
+  const pending = pendingPdfUploads.get(uploadId);
+  if (!pending || !fs.existsSync(pending.filePath)) {
+    res.status(404).json({ success: false, error: 'Uploaded PDF session expired or not found. Please re-upload the PDF.' });
+    return;
+  }
+
+  const cleanTitle = typeof title === 'string' && title.trim() ? title.trim() : pending.parsed.title;
+  const numericPrice = Number(price);
+  if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
+    res.status(400).json({ success: false, error: 'Please specify a valid PDF e-book price greater than $0.00.' });
+    return;
+  }
+
+  const resolvedCategory: ProductCategory =
+    typeof category === 'string' && PRODUCT_CATEGORIES.includes(category as ProductCategory)
+      ? (category as ProductCategory)
+      : pending.parsed.category;
+
+  const productId = `mono-${Date.now()}`;
+  const finalFilePath = path.join(UPLOADS_DIR, `${productId}.pdf`);
+  fs.renameSync(pending.filePath, finalFilePath);
+  productPdfPaths.set(productId, finalFilePath);
+  pendingPdfUploads.delete(uploadId);
+
   const newProduct: Product = {
-    id: `mono-${Date.now()}`,
-    title: req.body.title || 'Untitled Clinical Monograph',
-    subtitle: req.body.subtitle || 'Monograph Series',
-    author: req.body.author || 'Dr. Amina Ilupeju, MD, FACOG',
+    id: productId,
+    title: cleanTitle,
+    subtitle: (typeof subtitle === 'string' && subtitle.trim()) || pending.parsed.subtitle,
+    author: (typeof author === 'string' && author.trim()) || pending.parsed.author,
     authorTitle: 'MD, FACOG',
-    authorCredentials: 'Perinatal Faculty Specialist',
-    authorAvatar: 'https://images.unsplash.com/photo-1594824813633-8241446539a2?auto=format&fit=crop&q=80&w=260',
-    coverImage: req.body.coverImage || 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&q=80&w=800',
-    price: req.body.price || 45.00,
-    digitalPrice: req.body.digitalPrice || 26.00,
-    formats: req.body.formats || ['Hardcover', 'EPUB'],
-    category: req.body.category || 'Maternal Health',
+    authorCredentials: 'GyneWell Care & Wellness Clinical Press',
+    authorAvatar: '/assets/aistudio/Dr_Oluremi_Ilupeju_d7f8ed13.webp',
+    coverImage:
+      (typeof coverImage === 'string' && coverImage.trim()) ||
+      'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&q=80&w=800',
+    price: Number(numericPrice.toFixed(2)),
+    format: 'PDF',
+    pdfFileName: pending.parsed.fileName,
+    pdfUrl: `/api/products/${productId}/pdf`,
+    category: resolvedCategory,
     rating: 5.0,
     reviewCount: 1,
-    pages: req.body.pages || 250,
-    publishYear: 2026,
-    edition: '1st Edition',
-    isbn: req.body.isbn || '978-1-954821-99-9',
-    cmeCredits: req.body.cmeCredits || 10,
-    peerReviewQuote: req.body.peerReviewQuote || 'A promising clinical addition to maternal healthcare literature.',
-    peerReviewSource: 'Serene Editorial Board',
-    stock: req.body.stock || 20,
-    lowStockThreshold: 10,
-    synopsis: req.body.synopsis || 'Clinical monograph providing evidence-based protocols for medical professionals.',
-    tableOfContents: ['Introduction', 'Clinical Evidence', 'Implementation Guidelines'],
-    sampleChapters: [
-      {
-        id: `chap-${Date.now()}`,
-        chapterNumber: 1,
-        title: 'Introduction & Clinical Indications',
-        subtitle: 'Foundational framework and diagnostic scope',
-        readingTimeMinutes: 8,
-        content: [
-          'This clinical monograph compiles multi-center trial data and clinical practice guidelines to optimize patient outcomes.',
-          'Comprehensive biomarker assessment and patient-centered rehabilitation timelines provide predictable restorative results.'
-        ]
-      }
-    ]
+    pages: pending.parsed.pages,
+    wordCount: pending.parsed.wordCount,
+    publishYear: new Date().getFullYear(),
+    edition: '1st PDF Edition',
+    editionVersion: (typeof editionVersion === 'string' && editionVersion.trim()) || pending.parsed.editionVersion,
+    isbn: (typeof isbn === 'string' && isbn.trim()) || pending.parsed.isbn,
+    fileSizeMb: pending.parsed.fileSizeMb,
+    cmeCredits: Number.isFinite(Number(cmeCredits)) ? Number(cmeCredits) : pending.parsed.cmeCredits,
+    peerReviewQuote: 'Parsed, verified, and published directly from the GyneWell Medical Director editorial desk.',
+    peerReviewSource: 'GyneWell Clinical Review Board',
+    licensesIssued: 0,
+    activeReadersCount: 1,
+    instantAccess: true,
+    sourceType: 'uploaded',
+    uploadedAt: new Date().toISOString(),
+    synopsis: (typeof synopsis === 'string' && synopsis.trim()) || pending.parsed.synopsis,
+    tableOfContents:
+      Array.isArray(tableOfContents) && tableOfContents.length > 0
+        ? tableOfContents
+        : pending.parsed.tableOfContents,
+    sampleChapters:
+      Array.isArray(sampleChapters) && sampleChapters.length > 0
+        ? sampleChapters
+        : pending.parsed.sampleChapters
   };
 
-  products.push(newProduct);
-  res.json({ success: true, product: newProduct });
+  // Prepend so newly posted PDF appears immediately at the top of storefront and admin table
+  products.unshift(newProduct);
+
+  res.status(201).json({
+    success: true,
+    product: newProduct,
+    message: `"${newProduct.title}" (PDF) is now live on the GyneWell storefront.`
+  });
 });
 
 // Vite Dev Server Integration
 async function startServer() {
   const isProduction = process.env.NODE_ENV === 'production';
+  let viteServer: { close: () => Promise<void> } | null = null;
 
   if (!isProduction) {
+    const { createServer: createViteServer } = await import('vite');
+    const disableHmr = process.env.DISABLE_HMR === 'true';
     const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa'
+      server: {
+        middlewareMode: true,
+        allowedHosts: true,
+        hmr: !disableHmr,
+        ws: disableHmr ? false : undefined,
+        watch: disableHmr ? null : {},
+      },
+      appType: 'spa',
     });
+    viteServer = vite;
     app.use(vite.middlewares);
   } else {
     app.use(express.static(path.resolve(__dirname, 'dist')));
@@ -515,9 +885,28 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const httpServer = app.listen(PORT, '0.0.0.0', () => {
     console.log(`GyneWell Care & Wellness Server running at http://0.0.0.0:${PORT}`);
   });
+
+  httpServer.on('error', (err) => {
+    console.error('Failed to bind server port:', err);
+    process.exit(1);
+  });
+
+  const shutdown = async () => {
+    httpServer.close();
+    if (viteServer) {
+      await viteServer.close().catch(() => {});
+    }
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error('Fatal server startup error:', err);
+  process.exit(1);
+});

@@ -1,4 +1,12 @@
-export type FormatType = 'EPUB' | 'Hardcover' | 'Paperback' | 'Audiobook';
+export type FormatType = 'PDF';
+
+export type ProductCategory =
+  | 'Maternal Health'
+  | 'Endocrine & Hormonal'
+  | 'Pelvic Health'
+  | 'Clinical Nutrition'
+  | 'Perinatal Neurobiology'
+  | 'Pediatric Transitions';
 
 export interface MedicalNote {
   id: string;
@@ -28,24 +36,51 @@ export interface Product {
   authorAvatar: string;
   coverImage: string;
   price: number;
-  digitalPrice: number;
-  formats: FormatType[];
-  category: 'Maternal Health' | 'Endocrine & Hormonal' | 'Pelvic Health' | 'Clinical Nutrition' | 'Perinatal Neurobiology' | 'Pediatric Transitions';
+  format: FormatType;
+  pdfFileName: string;
+  pdfUrl: string;
+  category: ProductCategory;
   rating: number;
   reviewCount: number;
   pages: number;
+  wordCount?: number;
   publishYear: number;
   edition: string;
+  editionVersion: string;
   isbn: string;
+  fileSizeMb: number;
   cmeCredits?: number;
   peerReviewQuote: string;
   peerReviewSource: string;
-  stock: number;
-  lowStockThreshold: number;
+  licensesIssued: number;
+  activeReadersCount: number;
+  instantAccess: boolean;
   isFeatured?: boolean;
+  sourceType?: 'uploaded' | 'catalog';
+  uploadedAt?: string;
   synopsis: string;
   tableOfContents: string[];
   sampleChapters: Chapter[];
+}
+
+export interface ParsedPdfDraft {
+  uploadId: string;
+  fileName: string;
+  fileSizeMb: number;
+  pages: number;
+  wordCount: number;
+  title: string;
+  subtitle: string;
+  author: string;
+  category: ProductCategory;
+  isbn: string;
+  editionVersion: string;
+  suggestedPrice: number;
+  cmeCredits: number;
+  synopsis: string;
+  tableOfContents: string[];
+  sampleChapters: Chapter[];
+  rawExcerpt: string;
 }
 
 export interface CartItem {
@@ -75,12 +110,14 @@ export interface Order {
   items: OrderItem[];
   subtotal: number;
   discount: number;
-  shipping: number;
+  shipping: number; // Always $0.00 for instant PDF e-book delivery
   tax: number;
   total: number;
   promoCode?: string;
   paymentMethod: 'card' | 'google_pay' | 'apple_pay' | 'hsa_fsa';
-  status: 'Completed' | 'Processing' | 'Shipped';
+  status: 'Completed' | 'Processing';
+  licenseKeys: Record<string, string>;
+  downloadTokens?: Record<string, string>;
   createdAt: string;
 }
 
@@ -112,13 +149,16 @@ export interface AdminMetrics {
   totalRevenue: number;
   ordersCount: number;
   averageOrderValue: number;
-  totalUnitsSold: number;
+  totalLicensesIssued: number;
   activeReadersNow: number;
-  lowStockCount: number;
+  totalDownloads: number;
+  totalPdfTitles: number;
+  totalUploadedPdfs: number;
+  totalPdfPages: number;
   salesGrowthPercent: number;
   recentOrders: Order[];
   dailySales: { date: string; amount: number; orders: number }[];
-  categoryBreakdown: { category: string; sales: number; count: number }[];
+  categoryBreakdown: { category: string; sales: number; count: number; percentage: number }[];
 }
 
 export interface SyncPayload {

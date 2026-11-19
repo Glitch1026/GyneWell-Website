@@ -5,16 +5,19 @@ import {
   validateDiscountCode,
   validateCreditCard,
   calculateReadingProgress,
-  computeSalesMetrics
+  computeSalesMetrics,
+  generateDigitalLicenseKey,
+  isAdminUser,
+  resolveSafeActiveTab
 } from './shop-logic.ts';
-import { CartItem, Order, Product } from '../types.ts';
+import type { CartItem, Order, Product } from '../types.ts';
 
 test('validateDiscountCode recognizes valid codes and rejects invalid ones', () => {
   const resultValid = validateDiscountCode('CLINICAL10');
   assert.equal(resultValid.valid, true);
   assert.equal(resultValid.discountPercent, 10);
 
-  const resultCaseInsensitive = validateDiscountCode(' serene20 ');
+  const resultCaseInsensitive = validateDiscountCode(' wellness20 ');
   assert.equal(resultCaseInsensitive.valid, true);
   assert.equal(resultCaseInsensitive.discountPercent, 20);
 
@@ -23,15 +26,15 @@ test('validateDiscountCode recognizes valid codes and rejects invalid ones', () 
   assert.equal(resultInvalid.discountPercent, 0);
 });
 
-test('calculateCartTotals calculates subtotal, discounts, shipping, and tax accurately', () => {
+test('calculateCartTotals calculates subtotal, discounts, zero-shipping instant delivery, and tax accurately for PDF e-books', () => {
   const sampleItems: CartItem[] = [
     {
       id: 'c1',
       productId: 'p1',
       title: 'The Restorative Postpartum',
-      author: 'Dr. Amina Ilupeju',
-      format: 'Hardcover',
-      price: 48.00,
+      author: 'Dr. Oluremi Ilupeju',
+      format: 'PDF',
+      price: 28.00,
       quantity: 1,
       coverImage: '/sample.jpg'
     },
@@ -39,48 +42,37 @@ test('calculateCartTotals calculates subtotal, discounts, shipping, and tax accu
       id: 'c2',
       productId: 'p2',
       title: 'Digital Companion Guide',
-      author: 'Dr. Amina Ilupeju',
-      format: 'EPUB',
+      author: 'Dr. Oluremi Ilupeju',
+      format: 'PDF',
       price: 24.00,
       quantity: 1,
       coverImage: '/sample2.jpg'
     }
   ];
 
-  // Total items = 2, Subtotal = $72.00
+  // Total items = 2, Subtotal = $52.00
   const totalsWithoutPromo = calculateCartTotals(sampleItems);
-  assert.equal(totalsWithoutPromo.subtotal, 72.00);
+  assert.equal(totalsWithoutPromo.subtotal, 52.00);
   assert.equal(totalsWithoutPromo.discount, 0);
-  // Physical order under $75 gets $7.50 shipping
-  assert.equal(totalsWithoutPromo.shipping, 7.50);
-  // Tax 5% of 72 = 3.60
-  assert.equal(totalsWithoutPromo.tax, 3.60);
-  assert.equal(totalsWithoutPromo.total, 83.10);
+  // All PDF e-books have instant cloud delivery: $0 shipping
+  assert.equal(totalsWithoutPromo.shipping, 0);
+  // Tax 5% of 52 = 2.60
+  assert.equal(totalsWithoutPromo.tax, 2.60);
+  assert.equal(totalsWithoutPromo.total, 54.60);
+  assert.equal(totalsWithoutPromo.isDigitalDelivery, true);
 
-  // With CLINICAL10 (10% off $72 = $7.20 off -> $64.80)
+  // With CLINICAL10 (10% off $52 = $5.20 off -> $46.80)
   const totalsWithPromo = calculateCartTotals(sampleItems, 'CLINICAL10');
-  assert.equal(totalsWithPromo.discount, 7.20);
-  assert.equal(totalsWithPromo.shipping, 7.50);
-  assert.equal(totalsWithPromo.tax, 3.24); // 5% of 64.80 = 3.24
-  assert.equal(totalsWithPromo.total, 75.54);
+  assert.equal(totalsWithPromo.discount, 5.20);
+  assert.equal(totalsWithPromo.shipping, 0);
+  assert.equal(totalsWithPromo.tax, 2.34); // 5% of 46.80 = 2.34
+  assert.equal(totalsWithPromo.total, 49.14);
 });
 
-test('calculateCartTotals gives free shipping for pure digital items', () => {
-  const digitalOnly: CartItem[] = [
-    {
-      id: 'c1',
-      productId: 'p1',
-      title: 'Digital EPUB Edition',
-      author: 'Dr. Amina Ilupeju',
-      format: 'EPUB',
-      price: 28.00,
-      quantity: 1,
-      coverImage: '/sample.jpg'
-    }
-  ];
-  const totals = calculateCartTotals(digitalOnly);
-  assert.equal(totals.shipping, 0);
-  assert.equal(totals.hasPhysicalItems, false);
+test('generateDigitalLicenseKey creates unique encrypted clinical licenses', () => {
+  const key = generateDigitalLicenseKey('ORD-8821', 'postpartum-healing');
+  assert.ok(key.startsWith('GW-LIC-POST-8821-'));
+  assert.equal(typeof key, 'string');
 });
 
 test('validateCreditCard validates numbers using Luhn check and detects invalid formats', () => {
@@ -118,7 +110,7 @@ test('calculateReadingProgress computes precise progress percentage across chapt
   assert.equal(prog3, 100);
 });
 
-test('computeSalesMetrics aggregates metrics, orders count, and revenue accurately', () => {
+test('computeSalesMetrics aggregates metrics, PDF library totals, and revenue accurately', () => {
   const dummyProducts: Product[] = [
     {
       id: 'p1',
@@ -129,20 +121,25 @@ test('computeSalesMetrics aggregates metrics, orders count, and revenue accurate
       authorCredentials: 'FACOG',
       authorAvatar: '',
       coverImage: '',
-      price: 50,
-      digitalPrice: 30,
-      formats: ['Hardcover'],
+      price: 28,
+      format: 'PDF',
+      pdfFileName: 'monograph-a.pdf',
+      pdfUrl: '/api/products/p1/pdf',
       category: 'Maternal Health',
       rating: 5,
       reviewCount: 10,
       pages: 200,
       publishYear: 2026,
       edition: '1st',
+      editionVersion: 'v1.0',
       isbn: '123',
+      fileSizeMb: 12,
       peerReviewQuote: '',
       peerReviewSource: '',
-      stock: 5,
-      lowStockThreshold: 10, // low stock!
+      licensesIssued: 500,
+      activeReadersCount: 30,
+      instantAccess: true,
+      sourceType: 'uploaded',
       synopsis: '',
       tableOfContents: [],
       sampleChapters: []
@@ -155,22 +152,45 @@ test('computeSalesMetrics aggregates metrics, orders count, and revenue accurate
       orderNumber: 'ORD-1001',
       customerEmail: 'doc@clinic.org',
       customerName: 'Dr. Test',
-      items: [{ productId: 'p1', title: 'Monograph A', format: 'Hardcover', price: 50, quantity: 2 }],
-      subtotal: 100,
+      items: [{ productId: 'p1', title: 'Monograph A', format: 'PDF', price: 28, quantity: 2 }],
+      subtotal: 56,
       discount: 0,
       shipping: 0,
-      tax: 5,
-      total: 105,
+      tax: 2.80,
+      total: 58.80,
       paymentMethod: 'card',
       status: 'Completed',
+      licenseKeys: { p1: 'GW-LIC-P1-1001-XYZ' },
       createdAt: '2026-11-08T10:00:00Z'
     }
   ];
 
   const metrics = computeSalesMetrics(dummyOrders, dummyProducts);
-  assert.equal(metrics.totalRevenue, 105);
+  assert.equal(metrics.totalRevenue, 58.80);
   assert.equal(metrics.ordersCount, 1);
-  assert.equal(metrics.averageOrderValue, 105);
-  assert.equal(metrics.totalUnitsSold, 2);
-  assert.equal(metrics.lowStockCount, 1);
+  assert.equal(metrics.averageOrderValue, 58.80);
+  assert.equal(metrics.totalLicensesIssued, 502); // 500 initial + 2 sold
+  assert.equal(metrics.totalPdfTitles, 1);
+  assert.equal(metrics.totalUploadedPdfs, 1);
+  assert.equal(metrics.totalPdfPages, 200);
+  assert.equal(metrics.categoryBreakdown[0].percentage, 100);
+});
+
+test('isAdminUser and resolveSafeActiveTab restrict admin panel visibility strictly to authenticated admins', () => {
+  assert.equal(isAdminUser(null), false);
+  assert.equal(isAdminUser(undefined), false);
+  assert.equal(isAdminUser({ role: 'customer' }), false);
+  assert.equal(isAdminUser({ role: 'admin' }), true);
+
+  // Guests and customers requesting admin fall back to catalog
+  assert.equal(resolveSafeActiveTab('admin', null), 'catalog');
+  assert.equal(resolveSafeActiveTab('admin', { role: 'customer' }), 'catalog');
+  assert.equal(resolveSafeActiveTab('profile', null), 'catalog');
+
+  // Customers can access catalog, reader, and profile
+  assert.equal(resolveSafeActiveTab('profile', { role: 'customer' }), 'profile');
+  assert.equal(resolveSafeActiveTab('reader', { role: 'customer' }), 'reader');
+
+  // Authenticated admins can access admin panel
+  assert.equal(resolveSafeActiveTab('admin', { role: 'admin' }), 'admin');
 });

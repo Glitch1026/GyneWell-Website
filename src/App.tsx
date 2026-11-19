@@ -8,9 +8,10 @@ import { CheckoutModal } from './components/CheckoutModal.tsx';
 import { AdminPanel } from './components/AdminPanel.tsx';
 import { AuthModal } from './components/AuthModal.tsx';
 import { CustomerProfile } from './components/CustomerProfile.tsx';
-import { Product, CartItem, UserProfile, Order, FormatType } from './types.ts';
+import type { Product, CartItem, UserProfile, Order } from './types.ts';
 import { MONOGRAPHS_INITIAL_DATA } from './data/monographs.ts';
-import { ShieldCheck, Heart } from 'lucide-react';
+import { isAdminUser, resolveSafeActiveTab } from './utils/shop-logic.ts';
+import { ShieldCheck } from 'lucide-react';
 
 export default function App() {
   const [products, setProducts] = useState<Product[]>(MONOGRAPHS_INITIAL_DATA);
@@ -19,15 +20,15 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   
-  // Cart state
+  // Cart state (PDF-only e-books)
   const [cartItems, setCartItems] = useState<CartItem[]>([
     {
       id: 'cart-init-1',
       productId: 'postpartum-healing',
       title: 'The Restorative Postpartum',
       author: 'Dr. Oluremi Ilupeju',
-      format: 'Hardcover',
-      price: 48.00,
+      format: 'PDF',
+      price: 28.00,
       quantity: 1,
       coverImage: 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&q=80&w=800'
     }
@@ -84,20 +85,32 @@ export default function App() {
     refreshProducts();
   }, []);
 
+  // Ensure restricted tabs (e.g. admin) are never accessible to non-admins or logged-out users
+  useEffect(() => {
+    const safeTab = resolveSafeActiveTab(activeTab, currentUser);
+    if (safeTab !== activeTab) {
+      setActiveTab(safeTab);
+    }
+  }, [activeTab, currentUser]);
+
   // Sync user state to backend API
-  const syncUserDataWithBackend = async (partialUpdates?: Partial<UserProfile>) => {
-    if (!currentUser) return;
+  const syncUserDataWithBackend = async (
+    partialUpdates?: Partial<UserProfile>,
+    userOverride?: UserProfile
+  ) => {
+    const targetUser = userOverride ?? currentUser;
+    if (!targetUser) return;
     setIsSyncing(true);
 
     try {
-      const updatedUser = { ...currentUser, ...(partialUpdates || {}) };
+      const updatedUser = { ...targetUser, ...(partialUpdates || {}) };
       setCurrentUser(updatedUser);
 
       const res = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: currentUser.id,
+          userId: targetUser.id,
           readingProgress: updatedUser.readingProgress,
           bookmarks: updatedUser.bookmarks,
           notes: updatedUser.notes,
@@ -117,11 +130,10 @@ export default function App() {
     }
   };
 
-  // Cart operations
-  const handleAddToCart = (product: Product, format: FormatType) => {
-    const price = format === 'EPUB' ? product.digitalPrice : product.price;
+  // Cart operations (all e-books are strictly PDF)
+  const handleAddToCart = (product: Product) => {
     const existingIndex = cartItems.findIndex(
-      item => item.productId === product.id && item.format === format
+      item => item.productId === product.id && item.format === 'PDF'
     );
 
     if (existingIndex > -1) {
@@ -134,8 +146,8 @@ export default function App() {
         productId: product.id,
         title: product.title,
         author: product.author,
-        format,
-        price,
+        format: 'PDF',
+        price: product.price,
         quantity: 1,
         coverImage: product.coverImage
       };
@@ -194,37 +206,26 @@ export default function App() {
     }
   };
 
-  // Admin inventory updates
-  const handleUpdateStock = async (prodId: string, newStock: number, newPrice?: number) => {
+  // Admin PDF catalog updates
+  const handleUpdateProductCatalog = async (prodId: string, updates: { price?: number; editionVersion?: string }) => {
     try {
       const res = await fetch(`/api/admin/inventory/${prodId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stock: newStock, price: newPrice })
+        body: JSON.stringify(updates)
       });
       const data = await res.json();
       if (data.success) {
         await refreshProducts();
       }
     } catch (e) {
-      console.error('Failed to update inventory', e);
+      console.error('Failed to update catalog', e);
     }
   };
 
-  const handleAddNewProduct = async (newProd: Partial<Product>) => {
-    try {
-      const res = await fetch('/api/admin/inventory', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newProd)
-      });
-      const data = await res.json();
-      if (data.success) {
-        await refreshProducts();
-      }
-    } catch (e) {
-      console.error('Failed to add product', e);
-    }
+  const handlePublishedPdfProduct = async (product: Product) => {
+    setProducts(prev => [product, ...prev.filter(p => p.id !== product.id)]);
+    await refreshProducts();
   };
 
   const featuredMonograph = products.find(p => p.isFeatured) || products[0];
@@ -287,13 +288,24 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'admin' && (
+        {activeTab === 'admin' && isAdminUser(currentUser) && (
           <AdminPanel
             currentUser={currentUser}
             onLoginAsMasterAdmin={handleLoginAsMasterAdmin}
             products={products}
-            onUpdateProductStock={handleUpdateStock}
-            onAddNewProduct={handleAddNewProduct}
+            onUpdateProductCatalog={handleUpdateProductCatalog}
+            onPublishedPdfProduct={handlePublishedPdfProduct}
+            onViewInStorefront={() => {
+              setSelectedCategory('All');
+              setSearchQuery('');
+              setActiveTab('catalog');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onPreviewProductInReader={(prod) => {
+              setSelectedBookForReader(prod);
+              setActiveTab('reader');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
             onRefreshData={refreshProducts}
           />
         )}
@@ -337,7 +349,7 @@ export default function App() {
         cartItems={cartItems}
         currentUser={currentUser}
         promoCode={promoCode}
-        onOrderSuccess={handleOrderSuccess}
+        onCheckoutSuccess={handleOrderSuccess}
         onOpenReaderForBook={handleOpenReaderForBook}
       />
 
@@ -347,7 +359,10 @@ export default function App() {
         onClose={() => setIsAuthOpen(false)}
         onLoginSuccess={(user) => {
           setCurrentUser(user);
-          syncUserDataWithBackend();
+          if (!isAdminUser(user) && activeTab === 'admin') {
+            setActiveTab('catalog');
+          }
+          syncUserDataWithBackend(undefined, user);
         }}
       />
 
@@ -364,7 +379,7 @@ export default function App() {
                   className="w-10 h-10 object-contain rounded-full bg-white p-0.5"
                 />
                 <div>
-                  <span className="font-serif text-xl font-bold tracking-tight text-white block">GyneWell</span>
+                  <span className="font-sans text-xl font-bold tracking-tight text-white block">GyneWell</span>
                   <span className="text-[10px] text-[#7ea8a4] tracking-widest uppercase font-semibold">Care & Wellness</span>
                 </div>
               </div>
@@ -378,7 +393,7 @@ export default function App() {
             </div>
 
             <div>
-              <h4 className="font-serif text-sm font-semibold text-white mb-3">GyneWell Specialties</h4>
+              <h4 className="font-sans text-sm font-semibold text-white mb-3">GyneWell Specialties</h4>
               <ul className="space-y-2 text-xs text-[#dbdad7]">
                 <li className="hover:text-white cursor-pointer" onClick={() => { setSelectedCategory('Maternal Health'); setActiveTab('catalog'); }}>Maternal Endocrinology</li>
                 <li className="hover:text-white cursor-pointer" onClick={() => { setSelectedCategory('Pelvic Health'); setActiveTab('catalog'); }}>Pelvic Fascial Restoration</li>
@@ -388,17 +403,24 @@ export default function App() {
             </div>
 
             <div>
-              <h4 className="font-serif text-sm font-semibold text-white mb-3">Platform Navigation</h4>
+              <h4 className="font-sans text-sm font-semibold text-white mb-3">Platform Navigation</h4>
               <ul className="space-y-2 text-xs text-[#dbdad7]">
                 <li className="hover:text-white cursor-pointer" onClick={() => setActiveTab('catalog')}>Monographs Catalog</li>
                 <li className="hover:text-white cursor-pointer" onClick={() => setActiveTab('reader')}>Interactive Clinical Reader</li>
-                <li className="hover:text-white cursor-pointer" onClick={() => setActiveTab('admin')}>Master Admin Console</li>
-                <li className="hover:text-white cursor-pointer" onClick={() => setIsAuthOpen(true)}>Google & Social Onboarding</li>
+                {isAdminUser(currentUser) && (
+                  <li className="hover:text-white cursor-pointer" onClick={() => setActiveTab('admin')}>Admin Panel</li>
+                )}
+                {currentUser && (
+                  <li className="hover:text-white cursor-pointer" onClick={() => setActiveTab('profile')}>My Library & Account</li>
+                )}
+                <li className="hover:text-white cursor-pointer" onClick={() => setIsAuthOpen(true)}>
+                  {currentUser ? 'Switch Account / Sign In' : 'Sign In / Onboarding'}
+                </li>
               </ul>
             </div>
 
             <div>
-              <h4 className="font-serif text-sm font-semibold text-white mb-3">Medical Leadership</h4>
+              <h4 className="font-sans text-sm font-semibold text-white mb-3">Medical Leadership</h4>
               <p className="text-xs text-[#dbdad7] leading-relaxed">
                 Founded & directed by Dr. Oluremi Ilupeju, MD, FACOG. Dedicated to clinical excellence, evidence-based maternal restorative medicine, and compassionate patient advocacy.
               </p>

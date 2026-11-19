@@ -1,10 +1,9 @@
-import { CartItem, Order, Product, AdminMetrics } from '../types.ts';
+import type { CartItem, Order, Product, AdminMetrics, UserProfile } from '../types.ts';
 
 export const PROMO_CODES: Record<string, { discountPercent: number; description: string }> = {
   GYNEWELL10: { discountPercent: 10, description: '10% GyneWell Clinical Community discount' },
   WELLNESS20: { discountPercent: 20, description: '20% GyneWell Care & Wellness Fellow discount' },
   CLINICAL10: { discountPercent: 10, description: '10% Clinical Community discount' },
-  SERENE20: { discountPercent: 20, description: '20% Serene Fellow discount' },
   WELCOME15: { discountPercent: 15, description: '15% New Practitioner discount' },
   MDCOMPLIMENTARY: { discountPercent: 100, description: '100% Peer Reviewer Access' }
 };
@@ -14,10 +13,10 @@ export interface CartCalculation {
   discount: number;
   discountPercent: number;
   tax: number;
-  shipping: number;
+  shipping: number; // Always $0.00 for instant digital e-books
   total: number;
   itemCount: number;
-  hasPhysicalItems: boolean;
+  isDigitalDelivery: boolean;
 }
 
 export function validateDiscountCode(rawCode?: string): { valid: boolean; discountPercent: number; description?: string } {
@@ -33,15 +32,14 @@ export function validateDiscountCode(rawCode?: string): { valid: boolean; discou
 export function calculateCartTotals(items: CartItem[], promoCode?: string): CartCalculation {
   const subtotal = items.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const itemCount = items.reduce((acc, item) => acc + item.quantity, 0);
-  const hasPhysicalItems = items.some(item => item.format === 'Hardcover' || item.format === 'Paperback');
 
   const { valid, discountPercent } = validateDiscountCode(promoCode);
   const discount = valid ? Number(((subtotal * discountPercent) / 100).toFixed(2)) : 0;
   
   const discountedSubtotal = Math.max(0, subtotal - discount);
-  // Free standard tracked clinical courier on physical orders over $75 or all-digital
-  const shipping = !hasPhysicalItems || discountedSubtotal >= 75 || discountedSubtotal === 0 ? 0 : 7.50;
-  // Estimated healthcare clinical publication tax: 5%
+  // All GyneWell publications are digital e-books: instant delivery, zero shipping fees
+  const shipping = 0;
+  // Standard electronic medical publication sales tax (5%)
   const tax = Number((discountedSubtotal * 0.05).toFixed(2));
   const total = Number((discountedSubtotal + shipping + tax).toFixed(2));
 
@@ -53,7 +51,7 @@ export function calculateCartTotals(items: CartItem[], promoCode?: string): Cart
     tax,
     total,
     itemCount,
-    hasPhysicalItems
+    isDigitalDelivery: true
   };
 }
 
@@ -124,6 +122,15 @@ export function validateCreditCard(cardNumber: string, expiry: string, cvv: stri
 }
 
 /**
+ * Generates an encrypted clinical digital license key for purchased e-books
+ */
+export function generateDigitalLicenseKey(orderNumber: string, productId: string): string {
+  const cleanProd = productId.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+  const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
+  return `GW-LIC-${cleanProd}-${orderNumber.slice(-4)}-${randomSuffix}`;
+}
+
+/**
  * Calculates overall reading progress percentage
  */
 export function calculateReadingProgress(chapterIndex: number, totalChapters: number, scrollFraction: number): number {
@@ -135,18 +142,23 @@ export function calculateReadingProgress(chapterIndex: number, totalChapters: nu
 }
 
 /**
- * Pure aggregation for sales metrics and performance
+ * Pure aggregation for sales metrics and digital performance
  */
 export function computeSalesMetrics(orders: Order[], products: Product[]): AdminMetrics {
   const totalRevenue = orders.reduce((sum, o) => sum + o.total, 0);
   const ordersCount = orders.length;
   const averageOrderValue = ordersCount > 0 ? Number((totalRevenue / ordersCount).toFixed(2)) : 0;
   
-  const totalUnitsSold = orders.reduce((sum, o) => {
+  const totalLicensesSold = orders.reduce((sum, o) => {
     return sum + o.items.reduce((itemSum, item) => itemSum + item.quantity, 0);
   }, 0);
 
-  const lowStockCount = products.filter(p => p.stock <= p.lowStockThreshold).length;
+  const totalLicensesIssued = products.reduce((sum, p) => sum + (p.licensesIssued || 0), 0) + totalLicensesSold;
+  const activeReadersNow = products.reduce((sum, p) => sum + (p.activeReadersCount || 0), 0);
+  const totalDownloads = totalLicensesIssued * 3; // Average 3 PDF downloads per license across devices
+  const totalPdfTitles = products.length;
+  const totalUploadedPdfs = products.filter(p => p.sourceType === 'uploaded').length;
+  const totalPdfPages = products.reduce((sum, p) => sum + (p.pages || 0), 0);
 
   // Group by date (e.g. past days)
   const salesMap = new Map<string, { amount: number; orders: number }>();
@@ -162,8 +174,9 @@ export function computeSalesMetrics(orders: Order[], products: Product[]): Admin
     .map(([date, data]) => ({ date, amount: Number(data.amount.toFixed(2)), orders: data.orders }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  // Category breakdown
+  // Category breakdown across PDF sales
   const categoryMap = new Map<string, { sales: number; count: number }>();
+  let totalCategoryCount = 0;
   orders.forEach(order => {
     order.items.forEach(item => {
       const prod = products.find(p => p.id === item.productId);
@@ -171,26 +184,58 @@ export function computeSalesMetrics(orders: Order[], products: Product[]): Admin
       const prev = categoryMap.get(cat) || { sales: 0, count: 0 };
       prev.sales += item.price * item.quantity;
       prev.count += item.quantity;
+      totalCategoryCount += item.quantity;
       categoryMap.set(cat, prev);
     });
   });
 
-  const categoryBreakdown = Array.from(categoryMap.entries()).map(([category, data]) => ({
-    category,
-    sales: Number(data.sales.toFixed(2)),
-    count: data.count
-  }));
+  const categoryBreakdown = Array.from(categoryMap.entries())
+    .map(([category, data]) => ({
+      category,
+      sales: Number(data.sales.toFixed(2)),
+      count: data.count,
+      percentage: totalCategoryCount > 0 ? Math.round((data.count / totalCategoryCount) * 100) : 0
+    }))
+    .sort((a, b) => b.sales - a.sales);
 
   return {
     totalRevenue: Number(totalRevenue.toFixed(2)),
     ordersCount,
     averageOrderValue,
-    totalUnitsSold,
-    activeReadersNow: 42,
-    lowStockCount,
-    salesGrowthPercent: 18.4,
+    totalLicensesIssued,
+    activeReadersNow,
+    totalDownloads,
+    totalPdfTitles,
+    totalUploadedPdfs,
+    totalPdfPages,
+    salesGrowthPercent: 24.6,
     recentOrders: orders.slice(0, 10),
     dailySales,
     categoryBreakdown
   };
+}
+
+export type AppTab = 'catalog' | 'reader' | 'admin' | 'profile';
+
+/**
+ * Returns true only when an authenticated administrator account is logged in.
+ */
+export function isAdminUser(user: Pick<UserProfile, 'role'> | null | undefined): boolean {
+  return Boolean(user && user.role === 'admin');
+}
+
+/**
+ * Ensures customers and logged-out visitors cannot stay on restricted views.
+ */
+export function resolveSafeActiveTab(
+  requestedTab: AppTab,
+  user: Pick<UserProfile, 'role'> | null | undefined
+): AppTab {
+  if (requestedTab === 'admin' && !isAdminUser(user)) {
+    return 'catalog';
+  }
+  if (requestedTab === 'profile' && !user) {
+    return 'catalog';
+  }
+  return requestedTab;
 }
